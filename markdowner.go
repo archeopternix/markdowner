@@ -34,11 +34,11 @@ type DefaultMarkdowner struct{}
 func NewDefaultMarkdowner() DefaultMarkdowner { return DefaultMarkdowner{} }
 
 func (DefaultMarkdowner) EncodeBody(md Markdown) ([]byte, error) {
-	return []byte(md.Body), nil
+	return []byte(md), nil
 }
 
 func (DefaultMarkdowner) DecodeBody(b []byte) (Markdown, error) {
-	return Markdown{Body: string(b)}, nil
+	return Markdown(string(b)), nil
 }
 
 func (DefaultMarkdowner) EncodeFrontmatter(fm Frontmatter) ([]byte, error) {

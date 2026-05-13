@@ -14,7 +14,7 @@ import (
 type Document struct {
 	ID          string // UUID
 	Frontmatter Frontmatter
-	Markdown    Markdown
+	Markdown    string
 	Media       []string // media base names
 }
 
@@ -40,9 +40,7 @@ type Frontmatter struct {
 	Keywords         []string
 }
 
-type Markdown struct {
-	Body string
-}
+type Markdown string
 
 // -----------------------------
 // Storage FS abstractions
@@ -88,7 +86,7 @@ type DocumentStore interface {
 	Importers() ImporterRegistry
 
 	// Update callbacks (e.g. search indexing).
-	RegisterUpdateHandler(func(context.Context, docID string) error)
+	RegisterUpdateHandler(func(ctx context.Context, docID string) error)
 }
 
 // -----------------------------
@@ -118,5 +116,5 @@ type SearchResult struct {
 
 type Search interface {
 	Find(ctx context.Context, text string, numResults int) ([]SearchResult, error)
-	UpdateHandler() func(context.Context, docID string) error
+	UpdateHandler() func(ctx context.Context, docID string) error
 }
