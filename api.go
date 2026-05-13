@@ -1,4 +1,4 @@
-package docpipe
+package markdowner
 
 import (
 	"context"
@@ -39,8 +39,6 @@ type Frontmatter struct {
 	Abstract         string
 	Keywords         []string
 }
-
-type Markdown string
 
 // -----------------------------
 // Storage FS abstractions

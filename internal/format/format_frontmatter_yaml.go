@@ -1,47 +1,17 @@
-package markdowner
+package format
 
 import (
 	"bytes"
 	"fmt"
 	"regexp"
 	"strings"
+
+	. "github.com/archeopternix/markdowner"
 )
 
-// Markdowner converts between the split-disk layout:
-// - front.md: YAML frontmatter only
-// - root.md:  Markdown body only
-//
-// This is intentionally minimal: it does not prescribe a particular YAML library.
-// Implementations can swap in yaml.v3, json, or custom encoders.
-
-type Markdowner interface {
-	EncodeFrontmatter(fm Frontmatter) ([]byte, error)
-	DecodeFrontmatter(b []byte) (Frontmatter, error)
-
-	EncodeBody(md string) ([]byte, error)
-	DecodeBody(b []byte) (string, error)
-}
-
-// DefaultMarkdowner is a small reference implementation:
-// - Body is treated as UTF-8 text pass-through.
-// - Frontmatter encoding/decoding is intentionally conservative and supports
-//   only a simple "key: value" subset plus "keywords" as a YAML list.
-//
-// If you need full YAML compatibility, replace this with a yaml.v3-based implementation.
-
-type DefaultMarkdowner struct{}
-
-func NewDefaultMarkdowner() DefaultMarkdowner { return DefaultMarkdowner{} }
-
-func (DefaultMarkdowner) EncodeBody(md string) ([]byte, error) {
-	return []byte(md), nil
-}
-
-func (DefaultMarkdowner) DecodeBody(b []byte) (string, error) {
-	return string(b), nil
-}
-
-func (DefaultMarkdowner) EncodeFrontmatter(fm Frontmatter) ([]byte, error) {
+// EncodeFrontmatterYAML encodes docpipe.Frontmatter into a minimal YAML representation.
+// This is intentionally conservative and supports scalar fields plus Keywords as a YAML list.
+func EncodeFrontmatterYAML(fm Frontmatter) ([]byte, error) {
 	var buf bytes.Buffer
 	write := func(k, v string) {
 		v = strings.TrimSpace(v)
@@ -76,11 +46,11 @@ func (DefaultMarkdowner) EncodeFrontmatter(fm Frontmatter) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-var (
-	simpleKV = regexp.MustCompile(`^([A-Za-z0-9_\-]+):\s*(.*)$`)
-)
+var simpleKV = regexp.MustCompile(`^([A-Za-z0-9_\-]+):\s*(.*)$`)
 
-func (DefaultMarkdowner) DecodeFrontmatter(b []byte) (Frontmatter, error) {
+// DecodeFrontmatterYAML decodes a minimal YAML representation into docpipe.Frontmatter.
+// It is not a full YAML parser.
+func DecodeFrontmatterYAML(b []byte) (Frontmatter, error) {
 	lines := strings.Split(string(b), "\n")
 	var fm Frontmatter
 
@@ -95,7 +65,6 @@ func (DefaultMarkdowner) DecodeFrontmatter(b []byte) (Frontmatter, error) {
 			inKeywords = true
 			continue
 		}
-
 		if inKeywords {
 			trim := strings.TrimSpace(ln)
 			if strings.HasPrefix(trim, "-") {
@@ -103,7 +72,6 @@ func (DefaultMarkdowner) DecodeFrontmatter(b []byte) (Frontmatter, error) {
 				fm.Keywords = append(fm.Keywords, unescapeYAMLScalar(kw))
 				continue
 			}
-			// any non-list line ends keywords block
 			inKeywords = false
 		}
 
@@ -136,12 +104,10 @@ func (DefaultMarkdowner) DecodeFrontmatter(b []byte) (Frontmatter, error) {
 			fm.Abstract = v
 		}
 	}
-
 	return fm, nil
 }
 
 func escapeYAMLScalar(s string) string {
-	// Minimal quoting: quote if it contains ':' leading/trailing spaces or starts with special chars.
 	needs := false
 	if strings.HasPrefix(s, "[") || strings.HasPrefix(s, "{") || strings.HasPrefix(s, "-") || strings.HasPrefix(s, "#") {
 		needs = true
