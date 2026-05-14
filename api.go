@@ -75,14 +75,20 @@ type DocumentStore interface {
 	// If doc.ID is empty a new document will be created.
 	SaveOrUpdate(ctx context.Context, doc *Document) error
 
+	// SaveMedia saves media content for a document. The mediaName is a base name (e.g. "image.png") and should be unique within the document.
 	SaveMedia(ctx context.Context, docID string, mediaName string, content io.Reader) error
 
+	// List returns a list of all document IDs.
 	List(ctx context.Context) ([]string, error)
 
+	// ParseFromPath parses a document from a file path. The path can be a local file or a URL.
 	ParseFromPath(ctx context.Context, p string) (*Document, error)
 
 	// Parse imports a new document into the Store from different formats.
 	Parse(ctx context.Context, src ImportSource) (*Document, error)
+
+	// Delete removes a document and all its media.
+	Delete(ctx context.Context, id string) error
 
 	// Public access to importers.
 	Importers() ImporterRegistry
