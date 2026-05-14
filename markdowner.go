@@ -11,9 +11,9 @@ import (
 
 var simpleKV = regexp.MustCompile(`^([A-Za-z0-9_\-]+):\s*(.*)$`)
 
-// GetFrontmatterYAML encodes Document.Frontmatter into a minimal YAML representation.
+// EncodeYAML encodes Document.Frontmatter into a minimal YAML representation.
 // This is intentionally conservative and supports scalar fields plus Keywords as a YAML list.
-func (d Document) EncodeFrontmatterYAML() ([]byte, error) {
+func (f Frontmatter) EncodeYAML() ([]byte, error) {
 	var buf bytes.Buffer
 	write := func(k, v string) {
 		v = strings.TrimSpace(v)
@@ -23,20 +23,20 @@ func (d Document) EncodeFrontmatterYAML() ([]byte, error) {
 		fmt.Fprintf(&buf, "%s: %s\n", k, format.EscapeYAMLScalar(v))
 	}
 
-	write("author", d.Frontmatter.Author)
-	write("title", d.Frontmatter.Title)
-	write("subtitle", d.Frontmatter.Subtitle)
-	write("date", d.Frontmatter.Date)
-	write("changedDate", d.Frontmatter.ChangedDate)
-	write("originalDocument", d.Frontmatter.OriginalDocument)
-	write("originalFormat", d.Frontmatter.OriginalFormat)
-	write("version", d.Frontmatter.Version)
-	write("language", d.Frontmatter.Language)
-	write("abstract", d.Frontmatter.Abstract)
+	write("author", f.Author)
+	write("title", f.Title)
+	write("subtitle", f.Subtitle)
+	write("date", f.Date)
+	write("changedDate", f.ChangedDate)
+	write("originalDocument", f.OriginalDocument)
+	write("originalFormat", f.OriginalFormat)
+	write("version", f.Version)
+	write("language", f.Language)
+	write("abstract", f.Abstract)
 
-	if len(d.Frontmatter.Keywords) > 0 {
+	if len(f.Keywords) > 0 {
 		buf.WriteString("keywords:\n")
-		for _, kw := range d.Frontmatter.Keywords {
+		for _, kw := range f.Keywords {
 			kw = strings.TrimSpace(kw)
 			if kw == "" {
 				continue
@@ -48,9 +48,9 @@ func (d Document) EncodeFrontmatterYAML() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// DecodeFrontmatterYAML decodes a minimal YAML representation into Document.Frontmatter.
+// DecodeYAML decodes a minimal YAML representation into Document.Frontmatter.
 // It is not a full YAML parser.
-func (d *Document) DecodeFrontmatterYAML(b []byte) error {
+func (f Frontmatter) DecodeYAML(b []byte) error {
 	lines := strings.Split(string(b), "\n")
 
 	inKeywords := false
@@ -68,7 +68,7 @@ func (d *Document) DecodeFrontmatterYAML(b []byte) error {
 			trim := strings.TrimSpace(ln)
 			if strings.HasPrefix(trim, "-") {
 				kw := strings.TrimSpace(strings.TrimPrefix(trim, "-"))
-				d.Frontmatter.Keywords = append(d.Frontmatter.Keywords, format.UnescapeYAMLScalar(kw))
+				f.Keywords = append(f.Keywords, format.UnescapeYAMLScalar(kw))
 				continue
 			}
 			inKeywords = false
@@ -82,25 +82,25 @@ func (d *Document) DecodeFrontmatterYAML(b []byte) error {
 		v := format.UnescapeYAMLScalar(strings.TrimSpace(m[2]))
 		switch k {
 		case "author":
-			d.Frontmatter.Author = v
+			f.Author = v
 		case "title":
-			d.Frontmatter.Title = v
+			f.Title = v
 		case "subtitle":
-			d.Frontmatter.Subtitle = v
+			f.Subtitle = v
 		case "date":
-			d.Frontmatter.Date = v
+			f.Date = v
 		case "changeddate":
-			d.Frontmatter.ChangedDate = v
+			f.ChangedDate = v
 		case "originaldocument":
-			d.Frontmatter.OriginalDocument = v
+			f.OriginalDocument = v
 		case "originalformat":
-			d.Frontmatter.OriginalFormat = v
+			f.OriginalFormat = v
 		case "version":
-			d.Frontmatter.Version = v
+			f.Version = v
 		case "language":
-			d.Frontmatter.Language = v
+			f.Language = v
 		case "abstract":
-			d.Frontmatter.Abstract = v
+			f.Abstract = v
 		}
 	}
 	return nil
@@ -108,6 +108,6 @@ func (d *Document) DecodeFrontmatterYAML(b []byte) error {
 
 // String returns a string representation of the Document, combining frontmatter and markdown.
 func (d Document) String() string {
-	fmYAML, _ := d.EncodeFrontmatterYAML()
+	fmYAML, _ := d.Frontmatter.EncodeYAML()
 	return fmt.Sprintf("---\n%s---\n%s", string(fmYAML), d.Markdown)
 }

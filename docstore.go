@@ -213,7 +213,7 @@ func (s *documentStore) GetByID(ctx context.Context, id string) (*Document, erro
 	}
 
 	doc := &Document{ID: id}
-	err = doc.DecodeFrontmatterYAML(fmBytes)
+	err = doc.Frontmatter.DecodeYAML(fmBytes)
 	if err != nil {
 		return nil, fmt.Errorf("decode front.md: %w", err)
 	}
@@ -260,7 +260,7 @@ func (s *documentStore) SaveOrUpdate(ctx context.Context, doc *Document) error {
 		return err
 	}
 
-	front, err := doc.EncodeFrontmatterYAML()
+	front, err := doc.Frontmatter.EncodeYAML()
 	if err != nil {
 		return err
 	}
