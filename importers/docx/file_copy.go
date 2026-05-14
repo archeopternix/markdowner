@@ -61,30 +61,60 @@ func copyDir(srcDir, dstDir string) error {
 	})
 }
 
-// rewritePandocMediaLinks rewrites Markdown image links that pandoc emits like:
+// rewritePandocMediaLinks Rewrite only image links where the *last directory* before the filename is "media".
+// Examples rewritten:
+//   ![](media/img.png)                -> ![](NEWPREFIX/img.png)
+//   ![](foo/bar/media/img.png)        -> ![](NEWPREFIX/img.png)
+//   ![](<foo/bar/media/img.png>)      -> ![](NEWPREFIX/img.png)
 //
-//	![](media/image.png)
-//	![](<media/image.png>)
-//
-// into:
-//
-//	![](media/image.png)  (same) or with a prefix if desired
-//
-// If you want them under a document-specific folder, pass prefix like "media/<docID>/".
+// Examples NOT rewritten:
+//   ![](immediate/img.png)            (no ".../media/<file>")
+//   ![](media/sub/img.png)            (last dir before filename is "sub", not "media")
+
 func rewritePandocMediaLinks(md string, newPrefix string) string {
-	// match: ![alt](media/xyz) and ![alt](<media/xyz>)
-	re := regexp.MustCompile(`!\[([^\]]*)\]\(\s*(<)?(media/[^)\s>]+)(>)?\s*\)`)
+
+	prefix := strings.TrimSuffix(newPrefix, "/")
+	if prefix != "" {
+		prefix += "/"
+	}
+
+	// Groups:
+	// 1 alt text
+	// 2 optional "<"
+	// 3 the link target (trim spaces later)
+	// 4 optional ">"
+	re := regexp.MustCompile(`!\[([^\]]*)\]\(\s*(<)?([^)>]+?)(>)?\s*\)`)
+
 	return re.ReplaceAllStringFunc(md, func(m string) string {
 		sub := re.FindStringSubmatch(m)
 		alt := sub[1]
-		path := sub[3] // "media/..."
-		// keep "media/" tail, but optionally prefix it
-		if newPrefix != "" {
-			// newPrefix expected to end with "/" or be empty; normalize
-			p := strings.TrimSuffix(newPrefix, "/") + "/"
-			// strip "media/" from original and put under prefix
-			path = p + strings.TrimPrefix(path, "media/")
+		rawTarget := strings.TrimSpace(sub[3])
+
+		// Drop optional surrounding angle brackets if the regex captured oddly;
+		// also trim again for cases like "< /tmp/x >".
+		rawTarget = strings.TrimPrefix(rawTarget, "<")
+		rawTarget = strings.TrimSuffix(rawTarget, ">")
+		rawTarget = strings.TrimSpace(rawTarget)
+
+		// Normalize backslashes just in case.
+		target := strings.ReplaceAll(rawTarget, `\`, `/`)
+		target = strings.TrimSpace(target)
+
+		// Extract filename and check last dir is "media".
+		// We only rewrite if the target ends with "/media/<filename>" (no extra subdir after media).
+		i := strings.LastIndex(target, "/")
+		if i < 0 || i == len(target)-1 {
+			return m
 		}
-		return "![" + alt + "](" + path + ")"
+		filename := target[i+1:]
+		parent := target[:i]
+
+		// parent must end with "/media" (or be exactly "media")
+		if parent == "media" || strings.HasSuffix(parent, "/media") {
+			newPath := prefix + filename
+			return "![" + alt + "](" + newPath + ")"
+		}
+
+		return m
 	})
 }

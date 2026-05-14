@@ -181,7 +181,7 @@ func (i DOCXImporter) Import(ctx context.Context, store DocumentStore, src Impor
 
 		// walk extractedMediaRoot recursively and returns all files.
 		// It does not keep file handles open; each MediaFile.Open opens on demand.
-		paths, err := MediaFilePaths(extractedMediaRoot)
+		paths, err := mediaFilePaths(extractedMediaRoot)
 		if err != nil {
 			return nil, fmt.Errorf("list extracted media: %w", err)
 		}
@@ -206,17 +206,17 @@ func (i DOCXImporter) Import(ctx context.Context, store DocumentStore, src Impor
 				return nil, fmt.Errorf("close media %q: %w", mediaName, err)
 			}
 
-			// rewrite markdown accordingly:
-			doc.Markdown = rewritePandocMediaLinks(doc.Markdown, "media")
 		}
-
+		// rewrite markdown accordingly:
+		doc.Markdown = rewritePandocMediaLinks(doc.Markdown, "media/")
 	}
+	store.SaveOrUpdate(ctx, doc)
 	return doc, nil
 }
 
 // MediaFilePaths returns all file paths (not directories) under extractedMediaRoot.
 // Paths are returned as full paths as encountered by WalkDir (you can Rel() them if needed).
-func MediaFilePaths(extractedMediaRoot string) ([]string, error) {
+func mediaFilePaths(extractedMediaRoot string) ([]string, error) {
 	var paths []string
 
 	err := filepath.WalkDir(extractedMediaRoot, func(path string, d fs.DirEntry, err error) error {

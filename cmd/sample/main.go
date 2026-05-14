@@ -8,31 +8,18 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/archeopternix/markdowner"
+	. "github.com/archeopternix/markdowner"
+
 	"github.com/archeopternix/markdowner/importers/docx"
 	"github.com/archeopternix/markdowner/importers/markdown"
-	"github.com/archeopternix/markdowner/internal/docstore"
 )
-
-func open(p string) (*os.File, os.FileInfo, error) {
-	f, err := os.Open(p)
-	if err != nil {
-		return nil, nil, err
-	}
-	info, err := f.Stat()
-	if err != nil {
-		_ = f.Close()
-		return nil, nil, err
-	}
-	return f, info, nil
-}
 
 func main() {
 	ctx := context.Background()
 	storeRoot := "./.sample-store"
 
 	rwfs := &localStoreFS{root: storeRoot}
-	store := docstore.NewDocumentStore(rwfs)
+	store := NewDocumentStore(rwfs)
 	store.Importers().Register(markdown.New())
 	store.Importers().Register(docx.New())
 
@@ -44,7 +31,7 @@ func main() {
 	}
 	defer f.Close()
 
-	doc, err := store.Parse(ctx, markdowner.ImportSource{
+	doc, err := store.Parse(ctx, ImportSource{
 		Reader:   f,
 		Name:     filepath.Base(samplePath),
 		Size:     info.Size(),
@@ -58,6 +45,8 @@ func main() {
 
 	fmt.Println(string(doc.String()))
 }
+
+// -----------------------------
 
 type localStoreFS struct {
 	root string
@@ -123,4 +112,18 @@ func (l *localStoreFS) ListMedia(docID string) ([]string, error) {
 		}
 	}
 	return names, nil
+}
+
+// open is a helper that opens a file and returns its handle and info, ensuring the handle is closed on error.
+func open(p string) (*os.File, os.FileInfo, error) {
+	f, err := os.Open(p)
+	if err != nil {
+		return nil, nil, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, nil, err
+	}
+	return f, info, nil
 }

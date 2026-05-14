@@ -1,4 +1,4 @@
-package docstore
+package markdowner
 
 import (
 	"bufio"
@@ -12,8 +12,6 @@ import (
 	"path"
 	"sort"
 	"strings"
-
-	. "github.com/archeopternix/markdowner"
 )
 
 // docstore.go is a single-file reference implementation that groups the following topics:
@@ -267,9 +265,6 @@ func (s *documentStore) SaveOrUpdate(ctx context.Context, doc *Document) error {
 		return err
 	}
 	root := []byte(doc.Markdown)
-	if err != nil {
-		return err
-	}
 
 	// Both mandatory: always write both.
 	if err := writeFile(ctx, s.rwfs, frontPath(doc.ID), 0o644, front); err != nil {
@@ -284,6 +279,14 @@ func (s *documentStore) SaveOrUpdate(ctx context.Context, doc *Document) error {
 		return err
 	}
 	return nil
+}
+
+// Delete removes all files for the document. It does not return an error if the document does not exist.
+func (s *documentStore) Delete(ctx context.Context, id string) error {
+	if err := validateDocID(id); err != nil {
+		return err
+	}
+	return s.rwfs.RemoveAll(docDir(id))
 }
 
 // -----------------------------
