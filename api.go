@@ -75,6 +75,8 @@ type DocumentStore interface {
 	// If doc.ID is empty a new document will be created.
 	SaveOrUpdate(ctx context.Context, doc *Document) error
 
+	SaveMedia(ctx context.Context, docID string, mediaName string, content io.Reader) error
+
 	List(ctx context.Context) ([]string, error)
 
 	// Parse imports a new document into the Store from different formats.

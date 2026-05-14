@@ -55,6 +55,27 @@ type documentStore struct {
 	indexPath string
 }
 
+func (d documentStore) SaveMedia(ctx context.Context, docID string, mediaName string, content io.Reader) error {
+	_ = ctx
+	if err := validateDocID(docID); err != nil {
+		return err
+	}
+	if err := validateMediaName(mediaName); err != nil {
+		return err
+	}
+
+	wc, err := d.rwfs.Create(mediaPath(docID, mediaName), 0o644)
+	if err != nil {
+		return err
+	}
+	defer wc.Close()
+	_, err = io.Copy(wc, content)
+	if err != nil {
+		return err
+	}
+	return err
+}
+
 // -----------------------------
 // paths.go (canonical paths)
 // -----------------------------

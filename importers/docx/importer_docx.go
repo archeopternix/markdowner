@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -169,22 +170,68 @@ func (i DOCXImporter) Import(ctx context.Context, store DocumentStore, src Impor
 		return nil, err
 	}
 
+	store.SaveOrUpdate(ctx, doc)
+
 	// Pandoc writes extracted files under: tmpMediaDir/media/...
 	extractedMediaRoot := filepath.Join(tmpMediaDir, "media")
 
 	// Only copy if media exists (some docs have none).
 	if st, err := os.Stat(extractedMediaRoot); err == nil && st.IsDir() {
-
 		// per-document folder to avoid name collisions:
-		storeMediaRoot := filepath.Join("media", src.Name) // e.g., "media/strategy.docx"
 
-		if err := copyDir(extractedMediaRoot, storeMediaRoot); err != nil {
-			return nil, fmt.Errorf("copy extracted media: %w", err)
+		// walk extractedMediaRoot recursively and returns all files.
+		// It does not keep file handles open; each MediaFile.Open opens on demand.
+		paths, err := MediaFilePaths(extractedMediaRoot)
+		if err != nil {
+			return nil, fmt.Errorf("list extracted media: %w", err)
+		}
+		doc.Media = paths
+
+		for _, p := range doc.Media {
+			f, err := os.Open(p)
+			if err != nil {
+				return nil, fmt.Errorf("open media %q: %w", p, err)
+			}
+
+			mediaName := filepath.Base(p)
+			// If you prefer preserving subfolders, use:
+			// rel, _ := filepath.Rel(extractedMediaRoot, p)
+			// mediaName := filepath.ToSlash(rel)
+
+			if err := store.SaveMedia(ctx, doc.ID, mediaName, f); err != nil {
+				_ = f.Close()
+				return nil, fmt.Errorf("save media %q: %w", mediaName, err)
+			}
+			if err := f.Close(); err != nil {
+				return nil, fmt.Errorf("close media %q: %w", mediaName, err)
+			}
+
+			// rewrite markdown accordingly:
+			doc.Markdown = rewritePandocMediaLinks(doc.Markdown, "media")
 		}
 
-		// rewrite markdown accordingly:
-		doc.Markdown = rewritePandocMediaLinks(doc.Markdown, storeMediaRoot)
 	}
-
 	return doc, nil
+}
+
+// MediaFilePaths returns all file paths (not directories) under extractedMediaRoot.
+// Paths are returned as full paths as encountered by WalkDir (you can Rel() them if needed).
+func MediaFilePaths(extractedMediaRoot string) ([]string, error) {
+	var paths []string
+
+	err := filepath.WalkDir(extractedMediaRoot, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		paths = append(paths, path)
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return paths, nil
 }
