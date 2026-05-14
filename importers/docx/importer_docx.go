@@ -168,5 +168,23 @@ func (i DOCXImporter) Import(ctx context.Context, store DocumentStore, src Impor
 	if err := store.SaveOrUpdate(ctx, doc); err != nil {
 		return nil, err
 	}
+
+	// Pandoc writes extracted files under: tmpMediaDir/media/...
+	extractedMediaRoot := filepath.Join(tmpMediaDir, "media")
+
+	// Only copy if media exists (some docs have none).
+	if st, err := os.Stat(extractedMediaRoot); err == nil && st.IsDir() {
+
+		// per-document folder to avoid name collisions:
+		storeMediaRoot := filepath.Join("media", src.Name) // e.g., "media/strategy.docx"
+
+		if err := copyDir(extractedMediaRoot, storeMediaRoot); err != nil {
+			return nil, fmt.Errorf("copy extracted media: %w", err)
+		}
+
+		// rewrite markdown accordingly:
+		doc.Markdown = rewritePandocMediaLinks(doc.Markdown, storeMediaRoot)
+	}
+
 	return doc, nil
 }
