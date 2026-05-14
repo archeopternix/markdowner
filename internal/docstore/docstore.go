@@ -35,7 +35,6 @@ import (
 func NewDocumentStore(rwfs ReaderWriterFS) DocumentStore {
 	return &documentStore{
 		rwfs:      rwfs,
-		md:        NewDefaultMarkdowner(),
 		imps:      &importerRegistry{},
 		handlers:  nil,
 		listPath:  ".",
@@ -45,7 +44,6 @@ func NewDocumentStore(rwfs ReaderWriterFS) DocumentStore {
 
 type documentStore struct {
 	rwfs ReaderWriterFS
-	md   Markdowner
 
 	imps     *importerRegistry
 	handlers []func(context.Context, string) error
@@ -195,14 +193,13 @@ func (s *documentStore) GetByID(ctx context.Context, id string) (*Document, erro
 		return nil, fmt.Errorf("read root.md: %w", err)
 	}
 
-	fm, err := s.md.DecodeFrontmatter(fmBytes)
+	doc := &Document{ID: id}
+	err = doc.DecodeFrontmatterYAML(fmBytes)
 	if err != nil {
 		return nil, fmt.Errorf("decode front.md: %w", err)
 	}
-	md, err := s.md.DecodeBody(bodyBytes)
-	if err != nil {
-		return nil, fmt.Errorf("decode root.md: %w", err)
-	}
+
+	doc.Markdown = string(bodyBytes)
 
 	media, err := s.rwfs.ListMedia(id)
 	if err != nil {
@@ -215,7 +212,9 @@ func (s *documentStore) GetByID(ctx context.Context, id string) (*Document, erro
 	}
 	sort.Strings(media)
 
-	return &Document{ID: id, Frontmatter: fm, Markdown: md, Media: media}, nil
+	doc.Media = media
+
+	return doc, nil
 }
 
 // -----------------------------
@@ -242,11 +241,11 @@ func (s *documentStore) SaveOrUpdate(ctx context.Context, doc *Document) error {
 		return err
 	}
 
-	front, err := s.md.EncodeFrontmatter(doc.Frontmatter)
+	front, err := doc.EncodeFrontmatterYAML()
 	if err != nil {
 		return err
 	}
-	root, err := s.md.EncodeBody(doc.Markdown)
+	root := []byte(doc.Markdown)
 	if err != nil {
 		return err
 	}

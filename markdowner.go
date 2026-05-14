@@ -5,84 +5,53 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	format "github.com/archeopternix/markdowner/internal/format"
 )
 
-// Markdowner converts between the split-disk layout:
-// - front.md: YAML frontmatter only
-// - root.md:  Markdown body only
-//
-// This is intentionally minimal: it does not prescribe a particular YAML library.
-// Implementations can swap in yaml.v3, json, or custom encoders.
+var simpleKV = regexp.MustCompile(`^([A-Za-z0-9_\-]+):\s*(.*)$`)
 
-type Markdowner interface {
-	EncodeFrontmatter(fm Frontmatter) ([]byte, error)
-	DecodeFrontmatter(b []byte) (Frontmatter, error)
-
-	EncodeBody(md string) ([]byte, error)
-	DecodeBody(b []byte) (string, error)
-}
-
-// DefaultMarkdowner is a small reference implementation:
-// - Body is treated as UTF-8 text pass-through.
-// - Frontmatter encoding/decoding is intentionally conservative and supports
-//   only a simple "key: value" subset plus "keywords" as a YAML list.
-//
-// If you need full YAML compatibility, replace this with a yaml.v3-based implementation.
-
-type DefaultMarkdowner struct{}
-
-func NewDefaultMarkdowner() DefaultMarkdowner { return DefaultMarkdowner{} }
-
-func (DefaultMarkdowner) EncodeBody(md string) ([]byte, error) {
-	return []byte(md), nil
-}
-
-func (DefaultMarkdowner) DecodeBody(b []byte) (string, error) {
-	return string(b), nil
-}
-
-func (DefaultMarkdowner) EncodeFrontmatter(fm Frontmatter) ([]byte, error) {
+// GetFrontmatterYAML encodes Document.Frontmatter into a minimal YAML representation.
+// This is intentionally conservative and supports scalar fields plus Keywords as a YAML list.
+func (d Document) EncodeFrontmatterYAML() ([]byte, error) {
 	var buf bytes.Buffer
 	write := func(k, v string) {
 		v = strings.TrimSpace(v)
 		if v == "" {
 			return
 		}
-		fmt.Fprintf(&buf, "%s: %s\n", k, escapeYAMLScalar(v))
+		fmt.Fprintf(&buf, "%s: %s\n", k, format.EscapeYAMLScalar(v))
 	}
 
-	write("author", fm.Author)
-	write("title", fm.Title)
-	write("subtitle", fm.Subtitle)
-	write("date", fm.Date)
-	write("changedDate", fm.ChangedDate)
-	write("originalDocument", fm.OriginalDocument)
-	write("originalFormat", fm.OriginalFormat)
-	write("version", fm.Version)
-	write("language", fm.Language)
-	write("abstract", fm.Abstract)
+	write("author", d.Frontmatter.Author)
+	write("title", d.Frontmatter.Title)
+	write("subtitle", d.Frontmatter.Subtitle)
+	write("date", d.Frontmatter.Date)
+	write("changedDate", d.Frontmatter.ChangedDate)
+	write("originalDocument", d.Frontmatter.OriginalDocument)
+	write("originalFormat", d.Frontmatter.OriginalFormat)
+	write("version", d.Frontmatter.Version)
+	write("language", d.Frontmatter.Language)
+	write("abstract", d.Frontmatter.Abstract)
 
-	if len(fm.Keywords) > 0 {
+	if len(d.Frontmatter.Keywords) > 0 {
 		buf.WriteString("keywords:\n")
-		for _, kw := range fm.Keywords {
+		for _, kw := range d.Frontmatter.Keywords {
 			kw = strings.TrimSpace(kw)
 			if kw == "" {
 				continue
 			}
-			fmt.Fprintf(&buf, "  - %s\n", escapeYAMLScalar(kw))
+			fmt.Fprintf(&buf, "  - %s\n", format.EscapeYAMLScalar(kw))
 		}
 	}
 
 	return buf.Bytes(), nil
 }
 
-var (
-	simpleKV = regexp.MustCompile(`^([A-Za-z0-9_\-]+):\s*(.*)$`)
-)
-
-func (DefaultMarkdowner) DecodeFrontmatter(b []byte) (Frontmatter, error) {
+// DecodeFrontmatterYAML decodes a minimal YAML representation into Document.Frontmatter.
+// It is not a full YAML parser.
+func (d *Document) DecodeFrontmatterYAML(b []byte) error {
 	lines := strings.Split(string(b), "\n")
-	var fm Frontmatter
 
 	inKeywords := false
 	for _, ln := range lines {
@@ -95,15 +64,13 @@ func (DefaultMarkdowner) DecodeFrontmatter(b []byte) (Frontmatter, error) {
 			inKeywords = true
 			continue
 		}
-
 		if inKeywords {
 			trim := strings.TrimSpace(ln)
 			if strings.HasPrefix(trim, "-") {
 				kw := strings.TrimSpace(strings.TrimPrefix(trim, "-"))
-				fm.Keywords = append(fm.Keywords, unescapeYAMLScalar(kw))
+				d.Frontmatter.Keywords = append(d.Frontmatter.Keywords, format.UnescapeYAMLScalar(kw))
 				continue
 			}
-			// any non-list line ends keywords block
 			inKeywords = false
 		}
 
@@ -112,60 +79,35 @@ func (DefaultMarkdowner) DecodeFrontmatter(b []byte) (Frontmatter, error) {
 			continue
 		}
 		k := strings.ToLower(m[1])
-		v := unescapeYAMLScalar(strings.TrimSpace(m[2]))
+		v := format.UnescapeYAMLScalar(strings.TrimSpace(m[2]))
 		switch k {
 		case "author":
-			fm.Author = v
+			d.Frontmatter.Author = v
 		case "title":
-			fm.Title = v
+			d.Frontmatter.Title = v
 		case "subtitle":
-			fm.Subtitle = v
+			d.Frontmatter.Subtitle = v
 		case "date":
-			fm.Date = v
+			d.Frontmatter.Date = v
 		case "changeddate":
-			fm.ChangedDate = v
+			d.Frontmatter.ChangedDate = v
 		case "originaldocument":
-			fm.OriginalDocument = v
+			d.Frontmatter.OriginalDocument = v
 		case "originalformat":
-			fm.OriginalFormat = v
+			d.Frontmatter.OriginalFormat = v
 		case "version":
-			fm.Version = v
+			d.Frontmatter.Version = v
 		case "language":
-			fm.Language = v
+			d.Frontmatter.Language = v
 		case "abstract":
-			fm.Abstract = v
+			d.Frontmatter.Abstract = v
 		}
 	}
-
-	return fm, nil
+	return nil
 }
 
-func escapeYAMLScalar(s string) string {
-	// Minimal quoting: quote if it contains ':' leading/trailing spaces or starts with special chars.
-	needs := false
-	if strings.HasPrefix(s, "[") || strings.HasPrefix(s, "{") || strings.HasPrefix(s, "-") || strings.HasPrefix(s, "#") {
-		needs = true
-	}
-	if strings.ContainsAny(s, ":\n\r\t") {
-		needs = true
-	}
-	if strings.TrimSpace(s) != s {
-		needs = true
-	}
-	if !needs {
-		return s
-	}
-	q := strings.ReplaceAll(s, "\\", "\\\\")
-	q = strings.ReplaceAll(q, "\"", "\\\"")
-	return "\"" + q + "\""
-}
-
-func unescapeYAMLScalar(s string) string {
-	s = strings.TrimSpace(s)
-	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
-		s = s[1 : len(s)-1]
-		s = strings.ReplaceAll(s, "\\\"", "\"")
-		s = strings.ReplaceAll(s, "\\\\", "\\")
-	}
-	return s
+// String returns a string representation of the Document, combining frontmatter and markdown.
+func (d Document) String() string {
+	fmYAML, _ := d.EncodeFrontmatterYAML()
+	return fmt.Sprintf("---\n%s---\n%s", string(fmYAML), d.Markdown)
 }

@@ -1,78 +1,126 @@
 package main
 
 import (
-	"bufio"
+	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
-	"strings"
+	"path/filepath"
 
 	"github.com/archeopternix/markdowner"
+	"github.com/archeopternix/markdowner/importers/docx"
+	"github.com/archeopternix/markdowner/importers/markdown"
+	"github.com/archeopternix/markdowner/internal/docstore"
 )
 
-func main() {
-	input, err := os.ReadFile("testdata/sample.md")
+func open(p string) (*os.File, os.FileInfo, error) {
+	f, err := os.Open(p)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "read sample.md: %v\n", err)
-		os.Exit(1)
+		return nil, nil, err
 	}
-
-	fmText, body := splitYAMLFrontmatter(string(input))
-	md := markdowner.NewDefaultMarkdowner()
-	fm, err := md.DecodeFrontmatter([]byte(fmText))
+	info, err := f.Stat()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "decode frontmatter: %v\n", err)
-		os.Exit(1)
+		_ = f.Close()
+		return nil, nil, err
 	}
-
-	fmt.Println("Frontmatter:")
-	fmt.Printf("  Author: %s\n", fm.Author)
-	fmt.Printf("  Title: %s\n", fm.Title)
-	fmt.Printf("  Subtitle: %s\n", fm.Subtitle)
-	fmt.Printf("  Date: %s\n", fm.Date)
-	fmt.Printf("  ChangedDate: %s\n", fm.ChangedDate)
-	fmt.Printf("  OriginalDocument: %s\n", fm.OriginalDocument)
-	fmt.Printf("  OriginalFormat: %s\n", fm.OriginalFormat)
-	fmt.Printf("  Version: %s\n", fm.Version)
-	fmt.Printf("  Language: %s\n", fm.Language)
-	fmt.Printf("  Abstract: %s\n", fm.Abstract)
-	fmt.Printf("  Keywords: %v\n", fm.Keywords)
-
-	fmt.Println()
-	fmt.Println("Markdown Body:")
-	fmt.Println(body)
+	return f, info, nil
 }
 
-func splitYAMLFrontmatter(s string) (string, string) {
-	s = strings.TrimPrefix(s, "\ufeff")
-	if !strings.HasPrefix(s, "---") {
-		return "", s
+func main() {
+	ctx := context.Background()
+	storeRoot := "./.sample-store"
+
+	rwfs := &localStoreFS{root: storeRoot}
+	store := docstore.NewDocumentStore(rwfs)
+	store.Importers().Register(markdown.New())
+	store.Importers().Register(docx.New())
+
+	samplePath := "testdata/strategy.docx"
+	f, info, err := open(samplePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "read %s: %v\n", samplePath, err)
+		os.Exit(1)
+	}
+	defer f.Close()
+
+	doc, err := store.Parse(ctx, markdowner.ImportSource{
+		Reader:   f,
+		Name:     filepath.Base(samplePath),
+		Size:     info.Size(),
+		MimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		ModTime:  info.ModTime(),
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "parse sample.md: %v\n", err)
+		os.Exit(1)
 	}
 
-	r := bufio.NewReader(strings.NewReader(s))
-	first, err := r.ReadString('\n')
-	if err != nil && err != io.EOF {
-		return "", s
+	fmt.Println(string(doc.String()))
+}
+
+type localStoreFS struct {
+	root string
+}
+
+func (l *localStoreFS) Open(name string) (fs.File, error) {
+	return os.Open(filepath.Join(l.root, filepath.Clean(name)))
+}
+
+func (l *localStoreFS) MkdirAll(path string, perm fs.FileMode) error {
+	return os.MkdirAll(filepath.Join(l.root, filepath.Clean(path)), perm)
+}
+
+func (l *localStoreFS) RemoveAll(path string) error {
+	return os.RemoveAll(filepath.Join(l.root, filepath.Clean(path)))
+}
+
+func (l *localStoreFS) Create(name string, perm fs.FileMode) (io.WriteCloser, error) {
+	full := filepath.Join(l.root, filepath.Clean(name))
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		return nil, err
 	}
-	if strings.TrimSpace(first) != "---" {
-		return "", s
+	f, err := os.OpenFile(full, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
+}
+
+func (l *localStoreFS) ListAll(path string) ([]string, error) {
+	root := filepath.Join(l.root, filepath.Clean(path))
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
 	}
 
-	var fm strings.Builder
-	for {
-		line, e := r.ReadString('\n')
-		if e != nil && e != io.EOF {
-			return "", s
-		}
-		if strings.TrimSpace(line) == "---" {
-			break
-		}
-		fm.WriteString(line)
-		if e == io.EOF {
-			return "", s
+	ids := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			ids = append(ids, e.Name())
 		}
 	}
+	return ids, nil
+}
 
-	body, _ := io.ReadAll(r)
-	return fm.String(), string(body)
+func (l *localStoreFS) ListMedia(docID string) ([]string, error) {
+	dir := filepath.Join(l.root, filepath.Clean(docID), "media")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() {
+			names = append(names, e.Name())
+		}
+	}
+	return names, nil
 }

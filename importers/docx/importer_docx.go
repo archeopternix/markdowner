@@ -1,4 +1,4 @@
-package markdowner
+package docx
 
 import (
 	"bytes"
@@ -31,6 +31,8 @@ type DOCXImporter struct {
 	// Use with care; must not override required args like -f/-t/--extract-media.
 	ExtraArgs []string
 }
+
+func New() *DOCXImporter { return &DOCXImporter{} }
 
 func (i DOCXImporter) Name() string { return "docx(pandoc)" }
 
