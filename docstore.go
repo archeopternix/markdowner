@@ -298,25 +298,34 @@ func (s *documentStore) Delete(ctx context.Context, id string) error {
 // -----------------------------
 
 func (s *documentStore) ParseFromPath(ctx context.Context, p string) (*Document, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	f, err := os.Open(p)
 	if err != nil {
 		return nil, err
 	}
+
+	// file stats
+	info, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+
+	// MIME type detection
 	mime, err := store.DetectMime(p, f) // best effort; importers can also guess based on content
 	if err != nil {
 		_ = f.Close()
 		return nil, err
 	}
+
 	f.Close()
 
+	// new file reader for importers, since DetectMime may have read some bytes
 	fzero, err := os.Open(p)
 	if err != nil {
-		return nil, err
-	}
-
-	info, err := f.Stat()
-	if err != nil {
-		_ = f.Close()
 		return nil, err
 	}
 
@@ -345,7 +354,7 @@ func (s *documentStore) Parse(ctx context.Context, src ImportSource) (*Document,
 		return nil, err
 	}
 
-	slog.Debug("Parse file", "source", src.Name, "mime", src.MimeType, "importer", imp.Name())
+	slog.Info("Parse file", "source", src.Name, "mime", src.MimeType, "importer", imp.Name())
 
 	doc, err := imp.Import(ctx, s, src)
 	if err != nil {

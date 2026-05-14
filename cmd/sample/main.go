@@ -26,7 +26,7 @@ func main() {
 
 	doc, err := store.ParseFromPath(ctx, samplePath)
 	if err != nil {
-		slog.Error("parse sample.md: %v\n", err)
+		slog.Error("parse sample.md:" + err.Error())
 		os.Exit(1)
 	}
 

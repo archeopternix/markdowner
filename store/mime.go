@@ -18,9 +18,8 @@ type DetectedMime struct {
 // DetectMime detects: text, markdown, docx, pptx, pdf.
 // It does NOT lose bytes: it returns a new reader that will replay the bytes read for sniffing
 // followed by the remainder of the original stream.
-func DetectMime(name string, r io.ReadCloser) (DetectedMime, error) {
+func DetectMime(name string, r io.Reader) (DetectedMime, error) {
 	const sniffLen = 64 * 1024 // enough to include OOXML [Content_Types].xml and core parts in many files
-	defer r.Close()
 
 	prefix, err := read(r, sniffLen)
 	if err != nil {
