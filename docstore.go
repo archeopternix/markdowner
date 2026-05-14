@@ -9,9 +9,13 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
+	"os"
 	"path"
 	"sort"
 	"strings"
+
+	"github.com/archeopternix/markdowner/store"
 )
 
 // docstore.go is a single-file reference implementation that groups the following topics:
@@ -293,11 +297,55 @@ func (s *documentStore) Delete(ctx context.Context, id string) error {
 // parse.go
 // -----------------------------
 
+func (s *documentStore) ParseFromPath(ctx context.Context, p string) (*Document, error) {
+	f, err := os.Open(p)
+	if err != nil {
+		return nil, err
+	}
+	mime, err := store.DetectMime(p, f) // best effort; importers can also guess based on content
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	f.Close()
+
+	fzero, err := os.Open(p)
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+
+	src := ImportSource{
+		Reader:   fzero,
+		Name:     path.Base(p),
+		Size:     info.Size(),
+		MimeType: mime.MimeType, // optional; importers can guess based on name or content
+		ModTime:  info.ModTime(),
+	}
+	return s.Parse(ctx, src)
+}
+
 func (s *documentStore) Parse(ctx context.Context, src ImportSource) (*Document, error) {
+	if src.Reader == nil {
+		return nil, errors.New("source reader is nil")
+	}
+	defer src.Reader.Close()
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	imp, err := s.imps.selectImporter(ctx, src)
 	if err != nil {
 		return nil, err
 	}
+
+	slog.Debug("Parse file", "source", src.Name, "mime", src.MimeType, "importer", imp.Name())
 
 	doc, err := imp.Import(ctx, s, src)
 	if err != nil {

@@ -48,6 +48,7 @@ func (i DOCXImporter) Accept(ctx context.Context, src ImportSource) bool {
 	return strings.EqualFold(mime, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 }
 
+// Import converts the DOCX source to Markdown using pandoc, extracts media, and saves the Document and media to the store.
 func (i DOCXImporter) Import(ctx context.Context, store DocumentStore, src ImportSource) (*Document, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

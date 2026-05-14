@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
@@ -45,7 +46,18 @@ func (*MarkdownImporter) Accept(ctx context.Context, src ImportSource) bool {
 	}
 }
 
+// Import reads the markdown source, extracts frontmatter if present, and saves a Document to the store.
 func (*MarkdownImporter) Import(ctx context.Context, store DocumentStore, src ImportSource) (*Document, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if store == nil {
+		return nil, fmt.Errorf("store is nil")
+	}
+	if src.Reader == nil {
+		return nil, fmt.Errorf("source reader is nil")
+	}
+
 	b, err := ioReadAllWithContext(ctx, src.Reader)
 	if err != nil {
 		return nil, err

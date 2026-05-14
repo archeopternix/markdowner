@@ -19,7 +19,7 @@ type Document struct {
 }
 
 type ImportSource struct {
-	Reader   io.Reader
+	Reader   io.ReadCloser
 	Name     string
 	Size     int64
 	MimeType string
@@ -78,6 +78,8 @@ type DocumentStore interface {
 	SaveMedia(ctx context.Context, docID string, mediaName string, content io.Reader) error
 
 	List(ctx context.Context) ([]string, error)
+
+	ParseFromPath(ctx context.Context, p string) (*Document, error)
 
 	// Parse imports a new document into the Store from different formats.
 	Parse(ctx context.Context, src ImportSource) (*Document, error)

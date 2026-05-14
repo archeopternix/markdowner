@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
-	"path/filepath"
 
 	. "github.com/archeopternix/markdowner"
 
@@ -23,38 +23,12 @@ func main() {
 	store.Importers().Register(docx.New())
 
 	samplePath := "testdata/strategy.docx"
-	f, info, err := open(samplePath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "read %s: %v\n", samplePath, err)
-		os.Exit(1)
-	}
-	defer f.Close()
 
-	doc, err := store.Parse(ctx, ImportSource{
-		Reader:   f,
-		Name:     filepath.Base(samplePath),
-		Size:     info.Size(),
-		MimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-		ModTime:  info.ModTime(),
-	})
+	doc, err := store.ParseFromPath(ctx, samplePath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "parse sample.md: %v\n", err)
+		slog.Error("parse sample.md: %v\n", err)
 		os.Exit(1)
 	}
 
 	fmt.Println(string(doc.String()))
-}
-
-// open is a helper that opens a file and returns its handle and info, ensuring the handle is closed on error.
-func open(p string) (*os.File, os.FileInfo, error) {
-	f, err := os.Open(p)
-	if err != nil {
-		return nil, nil, err
-	}
-	info, err := f.Stat()
-	if err != nil {
-		_ = f.Close()
-		return nil, nil, err
-	}
-	return f, info, nil
 }

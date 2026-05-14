@@ -50,7 +50,7 @@ func (f Frontmatter) EncodeYAML() ([]byte, error) {
 
 // DecodeYAML decodes a minimal YAML representation into Document.Frontmatter.
 // It is not a full YAML parser.
-func (f Frontmatter) DecodeYAML(b []byte) error {
+func (f *Frontmatter) DecodeYAML(b []byte) error {
 	lines := strings.Split(string(b), "\n")
 
 	inKeywords := false
