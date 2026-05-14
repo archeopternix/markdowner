@@ -79,6 +79,14 @@ func (i DOCXImporter) Import(ctx context.Context, store DocumentStore, src Impor
 		return nil, err
 	}
 
+	// Extract metadata from the staged docx (core properties).
+	meta, err := extractDocxMetadata(ctx, tmpDocxPath)
+	if err != nil {
+		// Usually best: non-fatal metadata failure; import content anyway.
+		// If you prefer strict behavior, return err instead.
+		meta = extractedDocxMeta{}
+	}
+
 	// pandoc media extraction directory
 	tmpMediaDir, err := os.MkdirTemp("", "media")
 	if err != nil {
@@ -119,8 +127,42 @@ func (i DOCXImporter) Import(ctx context.Context, store DocumentStore, src Impor
 		Frontmatter: Frontmatter{
 			OriginalDocument: src.Name,
 			OriginalFormat:   "docx",
+			Author:           "",                                        // pandoc doesn't reliably extract author metadata from docx, so we leave it empty.
+			Title:            "",                                        // pandoc doesn't reliably extract title metadata from docx, so we leave it empty.
+			Subtitle:         "",                                        // pandoc doesn't reliably extract subtitle metadata from docx, so we leave it empty.
+			Date:             src.ModTime.Format("2006-01-02 15:04:05"), // fallback to file mod time if docx metadata is missing
+			ChangedDate:      src.ModTime.Format("2006-01-02 15:04:05"), // fallback to file mod time if docx metadata is missing
+			Version:          "1.0",
+			Language:         "",  // pandoc doesn't reliably extract language metadata from docx, so we leave it empty.
+			Abstract:         "",  // pandoc doesn't reliably extract abstract metadata from docx, so we leave it empty.
+			Keywords:         nil, // pandoc doesn't reliably extract keywords metadata from docx, so we leave it empty.
 		},
 		Markdown: out.String(),
+	}
+
+	// Write metadata to frontmatter *when available* (don’t stomp defaults/empties).
+	if meta.Title != "" && doc.Frontmatter.Title == "" {
+		doc.Frontmatter.Title = meta.Title
+	}
+	if meta.Author != "" && doc.Frontmatter.Author == "" {
+		doc.Frontmatter.Author = meta.Author
+	}
+	if meta.Language != "" && doc.Frontmatter.Language == "" {
+		doc.Frontmatter.Language = meta.Language
+	}
+	if meta.Abstract != "" && doc.Frontmatter.Abstract == "" {
+		doc.Frontmatter.Abstract = meta.Abstract
+	}
+	if len(meta.Keywords) > 0 && len(doc.Frontmatter.Keywords) == 0 {
+		doc.Frontmatter.Keywords = meta.Keywords
+	}
+
+	// Prefer real created/modified times if present in the docx.
+	if meta.CreatedAt != nil {
+		doc.Frontmatter.Date = meta.CreatedAt.Format("2006-01-02 15:04:05")
+	}
+	if meta.ModifiedAt != nil {
+		doc.Frontmatter.ChangedDate = meta.ModifiedAt.Format("2006-01-02 15:04:05")
 	}
 
 	if err := store.SaveOrUpdate(ctx, doc); err != nil {
