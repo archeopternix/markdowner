@@ -11,6 +11,7 @@ import (
 	expmd "github.com/archeopternix/markdowner/exporters/markdown"
 	"github.com/archeopternix/markdowner/importers/docx"
 	"github.com/archeopternix/markdowner/importers/markdown"
+	"github.com/archeopternix/markdowner/importers/vtt"
 	"github.com/archeopternix/markdowner/store/localstore"
 )
 
@@ -22,10 +23,11 @@ func main() {
 	store := NewDocumentStore(rwfs)
 	store.Importers().Register(markdown.New())
 	store.Importers().Register(docx.New())
+	store.Importers().Register(vtt.New())
 	store.Exporters().Register(expmd.New())
 	store.Exporters().Register(expdocx.New())
 
-	samplePath := "testdata/strategy.docx"
+	samplePath := "testdata/Sales.vtt"
 
 	doc, err := store.ParseFromPath(ctx, samplePath)
 	if err != nil {
@@ -33,14 +35,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	wc, err := os.Create("output.docx") // io.WriteCloser
+	wc, err := os.Create("vtt.md") // io.WriteCloser
 	if err != nil {
 		slog.Error("create output.docx:" + err.Error())
 		os.Exit(1)
 	}
 	defer wc.Close()
 
-	store.Export(ctx, doc, wc, "application/msword")
+	store.Export(ctx, doc, wc, "markdown")
 
 	//store.Delete(ctx, doc.ID)
 }

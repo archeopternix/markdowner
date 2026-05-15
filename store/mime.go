@@ -66,6 +66,10 @@ func DetectMime(name string, r io.Reader) (DetectedMime, error) {
 		}
 	}
 
+	if ext == ".vtt" {
+		return DetectedMime{MimeType: "text/vtt", Kind: "vtt"}, nil
+	}
+
 	// Text / Markdown
 	if looksLikeText(prefix) {
 		if ext == ".md" || ext == ".markdown" || looksLikeMarkdown(prefix) {
