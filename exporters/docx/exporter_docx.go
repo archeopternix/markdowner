@@ -65,7 +65,7 @@ func (e *DocxExporter) Export(ctx context.Context, doc *Document, writer io.Writ
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	inputPath := filepath.Join(tmpDir, "input.md")
+	inputPath := filepath.Join(doc.Path, "root.md")
 	outputPath := filepath.Join(tmpDir, "output.docx")
 
 	if err := os.WriteFile(inputPath, []byte(content), 0o644); err != nil {
@@ -83,7 +83,8 @@ func (e *DocxExporter) Export(ctx context.Context, doc *Document, writer io.Writ
 	}
 
 	if doc.Media != nil {
-		args = append(args, "--resource-path=media")
+		mediapath := filepath.Join(doc.Path)
+		args = append(args, "--resource-path="+mediapath)
 	}
 
 	if len(e.ExtraArgs) > 0 {
@@ -91,7 +92,7 @@ func (e *DocxExporter) Export(ctx context.Context, doc *Document, writer io.Writ
 	}
 
 	args = append(args, "-o", outputPath, inputPath)
-
+	fmt.Println(args)
 	cmd := exec.CommandContext(ctx, pandoc, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -133,7 +134,8 @@ func IsMSWord(mime string) bool {
 		return true
 	case "application/rtf", "text/rtf": // .rtf (varies)
 		return true
+	case "docx", "word", "msword":
+		return true
 	}
-
 	return false
 }

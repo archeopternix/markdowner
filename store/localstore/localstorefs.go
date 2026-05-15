@@ -82,3 +82,7 @@ func (l *LocalStoreFS) ListMedia(docID string) ([]string, error) {
 	}
 	return names, nil
 }
+
+func (l *LocalStoreFS) Root() string {
+	return l.root
+}

@@ -33,13 +33,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	wc, err := os.Create("output.md") // io.WriteCloser
+	wc, err := os.Create("output.docx") // io.WriteCloser
 	if err != nil {
-		slog.Error("create output.md:" + err.Error())
+		slog.Error("create output.docx:" + err.Error())
 		os.Exit(1)
 	}
 	defer wc.Close()
-	store.Export(ctx, doc, wc, "text/markdown")
 
-	store.Delete(ctx, doc.ID)
+	store.Export(ctx, doc, wc, "application/msword")
+
+	//store.Delete(ctx, doc.ID)
 }

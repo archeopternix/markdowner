@@ -18,7 +18,7 @@ func (*MarkdownExporter) Name() string { return "markdown" }
 func (*MarkdownExporter) Accept(ctx context.Context, mimeType string) bool {
 	_ = ctx
 	mt := strings.ToLower(strings.TrimSpace(mimeType))
-	return mt == "text/markdown" || mt == "text/plain"
+	return mt == "text/markdown" || mt == "text/plain" || mt == "text" || mt == "md" || mt == "markdown"
 }
 
 func (*MarkdownExporter) Export(ctx context.Context, doc *Document, writer io.WriteCloser) error {

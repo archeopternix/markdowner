@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -139,6 +140,8 @@ func (s *documentStore) SaveOrUpdate(ctx context.Context, doc *Document) error {
 		return err
 	}
 
+	doc.Path = filepath.Join(s.rwfs.Root(), docDir(doc.ID))
+
 	front, err := doc.Frontmatter.EncodeYAML()
 	if err != nil {
 		return err
@@ -264,8 +267,13 @@ func (s *documentStore) Parse(ctx context.Context, src ImportSource) (*Document,
 		return nil, err
 	}
 
+	stored.Path = filepath.Join(s.rwfs.Root(), docDir(doc.ID))
+
 	// Update handlers
 	if err := s.runUpdateHandlers(ctx, stored.ID); err != nil {
+		return nil, err
+	}
+	if err := s.SaveOrUpdate(ctx, stored); err != nil {
 		return nil, err
 	}
 	return stored, nil

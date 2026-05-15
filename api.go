@@ -16,6 +16,7 @@ type Document struct {
 	Frontmatter Frontmatter
 	Markdown    string
 	Media       []string // media base names
+	Path        string   //full path of the document including the folder name (ID)
 }
 
 type Frontmatter struct {
@@ -55,6 +56,9 @@ type ReaderWriterFS interface {
 
 	// Lists media names for a document.
 	ListMedia(docID string) ([]string, error)
+
+	// Root returns the root path of the RWFS. This can be used by importers and exporters to construct media paths.
+	Root() string
 }
 
 // -----------------------------
