@@ -81,7 +81,7 @@ func (*VTTmporter) Import(ctx context.Context, store DocumentStore, src ImportSo
 		fm.OriginalFormat = "vtt"
 	}
 
-	slog.Info("Parsed VTT", "title", fm.Title, "date", fm.Date)
+	slog.Debug("Parsed VTT", "title", fm.Title, "date", fm.Date)
 
 	bodyText, speakers := extractVTTBodyText(bodyText)
 	if strings.TrimSpace(bodyText) == "" {

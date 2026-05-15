@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"time"
@@ -96,6 +97,8 @@ func (*MarkdownImporter) Import(ctx context.Context, store DocumentStore, src Im
 	if strings.TrimSpace(fm.OriginalFormat) == "" {
 		fm.OriginalFormat = "markdown"
 	}
+
+	slog.Debug("Parsed markdown", "title", fm.Title, "date", fm.Date)
 
 	bodyText = strings.TrimRight(bodyText, "\r\n")
 	if strings.TrimSpace(bodyText) == "" {

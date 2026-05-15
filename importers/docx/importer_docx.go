@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -88,6 +89,8 @@ func (i DOCXImporter) Import(ctx context.Context, store DocumentStore, src Impor
 		// If you prefer strict behavior, return err instead.
 		meta = extractedDocxMeta{}
 	}
+
+	slog.Debug("Extracted DOCX", "title", meta.Title, "created", meta.CreatedAt)
 
 	// pandoc media extraction directory
 	tmpMediaDir, err := os.MkdirTemp("", "media")
