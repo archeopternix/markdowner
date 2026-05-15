@@ -175,6 +175,7 @@ func (s *documentStore) Export(ctx context.Context, doc *Document, writer io.Wri
 	if err != nil {
 		return err
 	}
+	slog.Debug("Export", "id", doc.ID, "format", mimeType)
 	return exp.Export(ctx, doc, writer)
 }
 
@@ -247,7 +248,7 @@ func (s *documentStore) Parse(ctx context.Context, src ImportSource) (*Document,
 		return nil, err
 	}
 
-	slog.Debug("Parse file", "source", src.Name, "mime", src.MimeType, "importer", imp.Name())
+	slog.Debug("Parse", "source", src.Name, "importer", imp.Name(), "mime", src.MimeType)
 
 	doc, err := imp.Import(ctx, s, src)
 	if err != nil {
