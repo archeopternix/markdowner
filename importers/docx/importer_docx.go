@@ -209,6 +209,7 @@ func (i DOCXImporter) Import(ctx context.Context, store DocumentStore, src Impor
 
 		}
 		// rewrite markdown accordingly:
+		doc.Markdown = rewritePandocFigureImageHTML(doc.Markdown, "media/")
 		doc.Markdown = rewritePandocMediaLinks(doc.Markdown, "media/")
 	}
 	store.SaveOrUpdate(ctx, doc)

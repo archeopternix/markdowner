@@ -38,6 +38,7 @@ func NewDocumentStore(rwfs ReaderWriterFS) DocumentStore {
 	return &documentStore{
 		rwfs:      rwfs,
 		imps:      &importerRegistry{},
+		exps:      &exporterRegistry{},
 		handlers:  nil,
 		listPath:  ".",
 		indexPath: ".", // unused here; reserved for callers
@@ -48,6 +49,7 @@ type documentStore struct {
 	rwfs ReaderWriterFS
 
 	imps     *importerRegistry
+	exps     *exporterRegistry
 	handlers []func(context.Context, string) error
 
 	// listPath is passed to rwfs.ListAll. Keep configurable if some RWFS expects "/".
@@ -157,6 +159,20 @@ func (s *documentStore) SaveOrUpdate(ctx context.Context, doc *Document) error {
 	}
 
 	return nil
+}
+
+func (s *documentStore) Export(ctx context.Context, doc *Document, writer io.WriteCloser, mimeType string) error {
+	if doc == nil {
+		return errors.New("nil document")
+	}
+	if writer == nil {
+		return errors.New("nil writer")
+	}
+	exp, err := s.exps.selectExporter(ctx, mimeType)
+	if err != nil {
+		return err
+	}
+	return exp.Export(ctx, doc, writer)
 }
 
 // Delete removes all files for the document. It does not return an error if the document does not exist.
@@ -284,6 +300,11 @@ func (s *documentStore) Importers() ImporterRegistry {
 	return s.imps
 }
 
+// Exporters returns the registry for registering external exporters.
+func (s *documentStore) Exporters() ExporterRegistry {
+	return s.exps
+}
+
 // RegisterUpdateHandler registers a handler function that is called after a document is created or updated.
 // Handlers are called in the order they were registered. If any handler returns an error, the process is aborted and the error is returned.
 func (s *documentStore) RegisterUpdateHandler(fn func(ctx context.Context, docID string) error) {
@@ -387,6 +408,40 @@ func (r *importerRegistry) selectImporter(ctx context.Context, src ImportSource)
 		}
 	}
 	return nil, fmt.Errorf("no importer accepted source %q", src.Name)
+}
+
+// -----------------------------
+// exporters.go (registry)
+// -----------------------------
+
+type exporterRegistry struct {
+	list []Exporter
+}
+
+func (r *exporterRegistry) Register(e Exporter) {
+	if e == nil {
+		return
+	}
+	r.list = append(r.list, e)
+}
+
+func (r *exporterRegistry) List() []Exporter {
+	out := make([]Exporter, 0, len(r.list))
+	out = append(out, r.list...)
+	return out
+}
+
+// selectExporter returns the first exporter that Accepts the MIME type.
+func (r *exporterRegistry) selectExporter(ctx context.Context, mimeType string) (Exporter, error) {
+	for _, exp := range r.list {
+		if exp == nil {
+			continue
+		}
+		if exp.Accept(ctx, mimeType) {
+			return exp, nil
+		}
+	}
+	return nil, fmt.Errorf("no exporter accepted MIME type %q", mimeType)
 }
 
 // -----------------------------

@@ -18,14 +18,6 @@ type Document struct {
 	Media       []string // media base names
 }
 
-type ImportSource struct {
-	Reader   io.ReadCloser
-	Name     string
-	Size     int64
-	MimeType string
-	ModTime  time.Time
-}
-
 type Frontmatter struct {
 	Author           string
 	Title            string
@@ -87,19 +79,33 @@ type DocumentStore interface {
 	// Parse imports a new document into the Store from different formats.
 	Parse(ctx context.Context, src ImportSource) (*Document, error)
 
+	// If doc.ID is empty a new document will be created.
+	Export(ctx context.Context, doc *Document, writer io.WriteCloser, mimeType string) error
+
 	// Delete removes a document and all its media.
 	Delete(ctx context.Context, id string) error
 
-	// Public access to importers.
+	// Public access to importers and exporters.
 	Importers() ImporterRegistry
+
+	// Public access to importers and exporters.
+	Exporters() ExporterRegistry
 
 	// Update callbacks (e.g. search indexing).
 	RegisterUpdateHandler(func(ctx context.Context, docID string) error)
 }
 
 // -----------------------------
-// Importers
+// Importers / Exporters
 // -----------------------------
+
+type ImportSource struct {
+	Reader   io.ReadCloser
+	Name     string
+	Size     int64
+	MimeType string
+	ModTime  time.Time
+}
 
 type Importer interface {
 	Name() string
@@ -107,9 +113,20 @@ type Importer interface {
 	Import(ctx context.Context, store DocumentStore, src ImportSource) (*Document, error)
 }
 
+type Exporter interface {
+	Name() string
+	Accept(ctx context.Context, mimeType string) bool
+	Export(ctx context.Context, doc *Document, writer io.WriteCloser) error
+}
+
 type ImporterRegistry interface {
 	Register(Importer)
 	List() []Importer
+}
+
+type ExporterRegistry interface {
+	Register(Exporter)
+	List() []Exporter
 }
 
 // -----------------------------
