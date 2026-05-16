@@ -5,11 +5,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"time"
+
+	fsutil "github.com/archeopternix/markdowner/internal/fsutils"
 )
 
 // Minimal subset of the OOXML core properties part.
@@ -46,21 +48,6 @@ func parseW3CDTF(s string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-func readZipFile(zr *zip.ReadCloser, name string) ([]byte, error) {
-	for _, f := range zr.File {
-		if f.Name != name {
-			continue
-		}
-		rc, err := f.Open()
-		if err != nil {
-			return nil, err
-		}
-		defer rc.Close()
-		return io.ReadAll(rc)
-	}
-	return nil, os.ErrNotExist
-}
-
 type extractedDocxMeta struct {
 	Title       string
 	Subtitle    string // DOCX core props doesn't really have "subtitle"; keep for possible extensions.
@@ -83,10 +70,10 @@ func extractDocxMetadata(_ context.Context, docxPath string) (extractedDocxMeta,
 	}
 	defer zr.Close()
 
-	coreXML, err := readZipFile(zr, "docProps/core.xml")
+	coreXML, err := fsutil.ReadZipFile(zr, "docProps/core.xml")
 	if err != nil {
 		// No core.xml is not fatal; just return empty meta.
-		if errorsIs(err, os.ErrNotExist) {
+		if errors.Is(err, os.ErrNotExist) {
 			return meta, nil
 		}
 		return meta, err
@@ -130,16 +117,4 @@ func extractDocxMetadata(_ context.Context, docxPath string) (extractedDocxMeta,
 	meta.Subject = strings.TrimSpace(props.Subject)
 
 	return meta, nil
-}
-
-// small helper so we don't need Go 1.20 errors.Is if you want compatibility; otherwise just use errors.Is directly.
-func errorsIs(err, target error) bool {
-	type iser interface{ Is(error) bool }
-	if err == target {
-		return true
-	}
-	if e, ok := err.(iser); ok {
-		return e.Is(target)
-	}
-	return false
 }

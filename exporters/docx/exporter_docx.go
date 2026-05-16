@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	. "github.com/archeopternix/markdowner"
+	md "github.com/archeopternix/markdowner"
 )
 
 type DocxExporter struct {
@@ -36,10 +36,29 @@ func (*DocxExporter) Name() string { return "docx" }
 func (*DocxExporter) Accept(ctx context.Context, mimeType string) bool {
 	_ = ctx
 
-	return IsMSWord(mimeType)
+	m := strings.ToLower(strings.TrimSpace(mimeType))
+
+	// MIME-based (useful when filename is missing or untrusted)
+	switch m {
+	case "application/msword": // .doc, .dot (legacy)
+		return true
+	case "application/vnd.openxmlformats-officedocument.wordprocessingml.document": // .docx
+		return true
+	case "application/vnd.ms-word.document.macroenabled.12": // .docm
+		return true
+	case "application/vnd.openxmlformats-officedocument.wordprocessingml.template": // .dotx
+		return true
+	case "application/vnd.ms-word.template.macroenabled.12": // .dotm
+		return true
+	case "application/rtf", "text/rtf": // .rtf (varies)
+		return true
+	case "docx", "word", "msword":
+		return true
+	}
+	return false
 }
 
-func (e *DocxExporter) Export(ctx context.Context, doc *Document, writer io.WriteCloser) error {
+func (e *DocxExporter) Export(ctx context.Context, doc *md.Document, writer io.WriteCloser) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -51,7 +70,7 @@ func (e *DocxExporter) Export(ctx context.Context, doc *Document, writer io.Writ
 	}
 	content := doc.String()
 	if strings.TrimSpace(content) == "" {
-		return fmt.Errorf("Document is empty")
+		return fmt.Errorf("md.Document is empty")
 	}
 
 	pandoc := strings.TrimSpace(e.PandocPath)
@@ -115,27 +134,4 @@ func (e *DocxExporter) Export(ctx context.Context, doc *Document, writer io.Writ
 	}
 
 	return nil
-}
-
-func IsMSWord(mime string) bool {
-	m := strings.ToLower(strings.TrimSpace(mime))
-
-	// MIME-based (useful when filename is missing or untrusted)
-	switch m {
-	case "application/msword": // .doc, .dot (legacy)
-		return true
-	case "application/vnd.openxmlformats-officedocument.wordprocessingml.document": // .docx
-		return true
-	case "application/vnd.ms-word.document.macroenabled.12": // .docm
-		return true
-	case "application/vnd.openxmlformats-officedocument.wordprocessingml.template": // .dotx
-		return true
-	case "application/vnd.ms-word.template.macroenabled.12": // .dotm
-		return true
-	case "application/rtf", "text/rtf": // .rtf (varies)
-		return true
-	case "docx", "word", "msword":
-		return true
-	}
-	return false
 }

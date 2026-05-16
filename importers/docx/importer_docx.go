@@ -5,14 +5,14 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
-	. "github.com/archeopternix/markdowner"
+	md "github.com/archeopternix/markdowner"
+	fsutils "github.com/archeopternix/markdowner/internal/fsutils"
 )
 
 // DOCXImporter imports .docx using pandoc.
@@ -38,7 +38,7 @@ func New() *DOCXImporter { return &DOCXImporter{} }
 
 func (i DOCXImporter) Name() string { return "docx(pandoc)" }
 
-func (i DOCXImporter) Accept(ctx context.Context, src ImportSource) bool {
+func (i DOCXImporter) Accept(ctx context.Context, src md.ImportSource) bool {
 	_ = ctx
 	name := strings.TrimSpace(src.Name)
 	mime := strings.TrimSpace(src.MimeType)
@@ -49,8 +49,8 @@ func (i DOCXImporter) Accept(ctx context.Context, src ImportSource) bool {
 	return strings.EqualFold(mime, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 }
 
-// Import converts the DOCX source to Markdown using pandoc, extracts media, and saves the Document and media to the store.
-func (i DOCXImporter) Import(ctx context.Context, store DocumentStore, src ImportSource) (*Document, error) {
+// Import converts the DOCX source to Markdown using pandoc, extracts media, and saves the md.Document and media to the store.
+func (i DOCXImporter) Import(ctx context.Context, store md.DocumentStore, src md.ImportSource) (*md.Document, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -127,9 +127,9 @@ func (i DOCXImporter) Import(ctx context.Context, store DocumentStore, src Impor
 		return nil, fmt.Errorf("pandoc docx import failed: %s", emsg)
 	}
 
-	doc := &Document{
+	doc := &md.Document{
 		// ID empty: store decides.
-		Frontmatter: Frontmatter{
+		Frontmatter: md.Frontmatter{
 			OriginalDocument: src.Name,
 			OriginalFormat:   "docx",
 			Author:           "",                                        // pandoc doesn't reliably extract author metadata from docx, so we leave it empty.
@@ -138,9 +138,8 @@ func (i DOCXImporter) Import(ctx context.Context, store DocumentStore, src Impor
 			Date:             src.ModTime.Format("2006-01-02 15:04:05"), // fallback to file mod time if docx metadata is missing
 			ChangedDate:      src.ModTime.Format("2006-01-02 15:04:05"), // fallback to file mod time if docx metadata is missing
 			Version:          "1.0",
-			Language:         "",  // pandoc doesn't reliably extract language metadata from docx, so we leave it empty.
-			Abstract:         "",  // pandoc doesn't reliably extract abstract metadata from docx, so we leave it empty.
-			Keywords:         nil, // pandoc doesn't reliably extract keywords metadata from docx, so we leave it empty.
+			Language:         "", // pandoc doesn't reliably extract language metadata from docx, so we leave it empty.
+			Abstract:         "", // pandoc doesn't reliably extract abstract metadata from docx, so we leave it empty.
 		},
 		Markdown: out.String(),
 	}
@@ -157,9 +156,6 @@ func (i DOCXImporter) Import(ctx context.Context, store DocumentStore, src Impor
 	}
 	if meta.Abstract != "" && doc.Frontmatter.Abstract == "" {
 		doc.Frontmatter.Abstract = meta.Abstract
-	}
-	if len(meta.Keywords) > 0 && len(doc.Frontmatter.Keywords) == 0 {
-		doc.Frontmatter.Keywords = meta.Keywords
 	}
 
 	// Prefer real created/modified times if present in the docx.
@@ -185,7 +181,7 @@ func (i DOCXImporter) Import(ctx context.Context, store DocumentStore, src Impor
 
 		// walk extractedMediaRoot recursively and returns all files.
 		// It does not keep file handles open; each MediaFile.Open opens on demand.
-		paths, err := mediaFilePaths(extractedMediaRoot)
+		paths, err := fsutils.ListAllFiles(extractedMediaRoot)
 		if err != nil {
 			return nil, fmt.Errorf("list extracted media: %w", err)
 		}
@@ -217,26 +213,4 @@ func (i DOCXImporter) Import(ctx context.Context, store DocumentStore, src Impor
 	}
 	store.SaveOrUpdate(ctx, doc)
 	return doc, nil
-}
-
-// MediaFilePaths returns all file paths (not directories) under extractedMediaRoot.
-// Paths are returned as full paths as encountered by WalkDir (you can Rel() them if needed).
-func mediaFilePaths(extractedMediaRoot string) ([]string, error) {
-	var paths []string
-
-	err := filepath.WalkDir(extractedMediaRoot, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		paths = append(paths, path)
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-	return paths, nil
 }

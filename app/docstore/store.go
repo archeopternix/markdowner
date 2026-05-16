@@ -1,4 +1,4 @@
-package markdowner
+package docstore
 
 import (
 	"bufio"
@@ -16,11 +16,18 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/archeopternix/markdowner/store"
+	md "github.com/archeopternix/markdowner"
+	"github.com/archeopternix/markdowner/internal/format"
 )
 
+// MimeDetector abstracts MIME detection for ParseFromPath.
+// The concrete adapter is injected at composition time.
+type MimeDetector interface {
+	Detect(path string, r io.Reader) (string, error)
+}
+
 // docstore.go is a single-file reference implementation that groups the following topics:
-// - concrete DocumentStore implementation
+// - concrete md.DocumentStore implementation
 // - List() using rwfs.ListAll
 // - GetByID() reading front.md/root.md + rwfs.ListMedia
 // - SaveOrUpdate() incl. allocate ID if empty; mandatory file enforcement
@@ -29,25 +36,38 @@ import (
 // - importer registry implementation returned by Importers()
 // - canonical paths: <id>/front.md, <id>/root.md, <id>/media/<name>
 
-// NewDocumentStore constructs a concrete DocumentStore backed by the provided ReaderWriterFS.
+// New constructs a concrete md.DocumentStore backed by the provided ReaderWriterFS.
 //
 // This implementation expects:
 // - rwfs.ListAll(".") (or "/") to return document IDs only
 // - rwfs.ListMedia(docID) to return base filenames only
 // - rwfs.Create(name, perm) to create/overwrite files
-func NewDocumentStore(rwfs ReaderWriterFS) DocumentStore {
+func New(rwfs md.ReaderWriterFS, mimeDetector MimeDetector) md.DocumentStore {
+	if mimeDetector == nil {
+		mimeDetector = noopMimeDetector{}
+	}
 	return &documentStore{
-		rwfs:      rwfs,
-		imps:      &importerRegistry{},
-		exps:      &exporterRegistry{},
-		handlers:  nil,
-		listPath:  ".",
-		indexPath: ".", // unused here; reserved for callers
+		rwfs:         rwfs,
+		mimeDetector: mimeDetector,
+		imps:         &importerRegistry{},
+		exps:         &exporterRegistry{},
+		handlers:     nil,
+		listPath:     ".",
+		indexPath:    ".", // unused here; reserved for callers
 	}
 }
 
+type noopMimeDetector struct{}
+
+func (noopMimeDetector) Detect(path string, r io.Reader) (string, error) {
+	_ = path
+	_ = r
+	return "", nil
+}
+
 type documentStore struct {
-	rwfs ReaderWriterFS
+	rwfs         md.ReaderWriterFS
+	mimeDetector MimeDetector
 
 	imps     *importerRegistry
 	exps     *exporterRegistry
@@ -77,7 +97,7 @@ func (s *documentStore) List(ctx context.Context) ([]string, error) {
 }
 
 // GetByID returns the document with the given ID. It reads the front.md and root.md files and lists the media files.
-func (s *documentStore) GetByID(ctx context.Context, id string) (*Document, error) {
+func (s *documentStore) GetByID(ctx context.Context, id string) (*md.Document, error) {
 	if err := validateDocID(id); err != nil {
 		return nil, err
 	}
@@ -91,12 +111,13 @@ func (s *documentStore) GetByID(ctx context.Context, id string) (*Document, erro
 		return nil, fmt.Errorf("read root.md: %w", err)
 	}
 
-	doc := &Document{ID: id}
-	err = doc.Frontmatter.DecodeYAML(fmBytes)
-	if err != nil {
-		return nil, fmt.Errorf("decode front.md: %w", err)
-	}
+	doc := &md.Document{ID: id}
 
+	fmap, err := format.DecodeYAML(fmBytes)
+	if err != nil {
+		return nil, fmt.Errorf("decode front.md YAML: %w", err)
+	}
+	doc.Frontmatter = md.DecodeFrontmatterFromMap(fmap)
 	doc.Markdown = string(bodyBytes)
 
 	media, err := s.rwfs.ListMedia(id)
@@ -118,7 +139,7 @@ func (s *documentStore) GetByID(ctx context.Context, id string) (*Document, erro
 }
 
 // SaveOrUpdate saves the document. It creates or overwrites the front.md and root.md files and ensures mandatory files exist.
-func (s *documentStore) SaveOrUpdate(ctx context.Context, doc *Document) error {
+func (s *documentStore) SaveOrUpdate(ctx context.Context, doc *md.Document) error {
 	if doc == nil {
 		return errors.New("nil document")
 	}
@@ -142,7 +163,8 @@ func (s *documentStore) SaveOrUpdate(ctx context.Context, doc *Document) error {
 
 	doc.Path = filepath.Join(s.rwfs.Root(), docDir(doc.ID))
 
-	front, err := doc.Frontmatter.EncodeYAML()
+	frontmap := doc.Frontmatter.EncodeFrontmatterToMap()
+	front, err := format.EncodeYAML(frontmap)
 	if err != nil {
 		return err
 	}
@@ -164,7 +186,7 @@ func (s *documentStore) SaveOrUpdate(ctx context.Context, doc *Document) error {
 	return nil
 }
 
-func (s *documentStore) Export(ctx context.Context, doc *Document, writer io.WriteCloser, mimeType string) error {
+func (s *documentStore) Export(ctx context.Context, doc *md.Document, writer io.WriteCloser, mimeType string) error {
 	if doc == nil {
 		return errors.New("nil document")
 	}
@@ -190,7 +212,7 @@ func (s *documentStore) Delete(ctx context.Context, id string) error {
 }
 
 // ParseFromPath is a convenience wrapper around Parse that takes a filesystem path, opens the file, and constructs an ImportSource.
-func (s *documentStore) ParseFromPath(ctx context.Context, p string) (*Document, error) {
+func (s *documentStore) ParseFromPath(ctx context.Context, p string) (*md.Document, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -207,8 +229,8 @@ func (s *documentStore) ParseFromPath(ctx context.Context, p string) (*Document,
 		return nil, err
 	}
 
-	// MIME type detection
-	mime, err := store.DetectMime(p, f) // best effort; importers can also guess based on content
+	// MIME type detection (adapter injected via MimeDetector).
+	mimeType, err := s.mimeDetector.Detect(p, f)
 	if err != nil {
 		_ = f.Close()
 		return nil, err
@@ -222,18 +244,18 @@ func (s *documentStore) ParseFromPath(ctx context.Context, p string) (*Document,
 		return nil, err
 	}
 
-	src := ImportSource{
+	src := md.ImportSource{
 		Reader:   fzero,
 		Name:     path.Base(p),
 		Size:     info.Size(),
-		MimeType: mime.MimeType, // optional; importers can guess based on name or content
+		MimeType: mimeType, // optional; importers can guess based on name or content
 		ModTime:  info.ModTime(),
 	}
 	return s.Parse(ctx, src)
 }
 
 // Parse reads the source, selects an importer, imports the document, saves it, and runs update handlers.
-func (s *documentStore) Parse(ctx context.Context, src ImportSource) (*Document, error) {
+func (s *documentStore) Parse(ctx context.Context, src md.ImportSource) (*md.Document, error) {
 	if src.Reader == nil {
 		return nil, errors.New("source reader is nil")
 	}
@@ -305,12 +327,12 @@ func (d documentStore) SaveMedia(ctx context.Context, docID string, mediaName st
 }
 
 // Importers returns the registry for registering external importers.
-func (s *documentStore) Importers() ImporterRegistry {
+func (s *documentStore) Importers() md.ImporterRegistry {
 	return s.imps
 }
 
 // Exporters returns the registry for registering external exporters.
-func (s *documentStore) Exporters() ExporterRegistry {
+func (s *documentStore) Exporters() md.ExporterRegistry {
 	return s.exps
 }
 
@@ -390,24 +412,24 @@ func validateMediaName(name string) error {
 // -----------------------------
 
 type importerRegistry struct {
-	list []Importer
+	list []md.Importer
 }
 
-func (r *importerRegistry) Register(i Importer) {
+func (r *importerRegistry) Register(i md.Importer) {
 	if i == nil {
 		return
 	}
 	r.list = append(r.list, i)
 }
 
-func (r *importerRegistry) List() []Importer {
-	out := make([]Importer, 0, len(r.list))
+func (r *importerRegistry) List() []md.Importer {
+	out := make([]md.Importer, 0, len(r.list))
 	out = append(out, r.list...)
 	return out
 }
 
 // selectImporter returns the first importer that Accepts the source.
-func (r *importerRegistry) selectImporter(ctx context.Context, src ImportSource) (Importer, error) {
+func (r *importerRegistry) selectImporter(ctx context.Context, src md.ImportSource) (md.Importer, error) {
 	for _, imp := range r.list {
 		if imp == nil {
 			continue
@@ -424,24 +446,24 @@ func (r *importerRegistry) selectImporter(ctx context.Context, src ImportSource)
 // -----------------------------
 
 type exporterRegistry struct {
-	list []Exporter
+	list []md.Exporter
 }
 
-func (r *exporterRegistry) Register(e Exporter) {
+func (r *exporterRegistry) Register(e md.Exporter) {
 	if e == nil {
 		return
 	}
 	r.list = append(r.list, e)
 }
 
-func (r *exporterRegistry) List() []Exporter {
-	out := make([]Exporter, 0, len(r.list))
+func (r *exporterRegistry) List() []md.Exporter {
+	out := make([]md.Exporter, 0, len(r.list))
 	out = append(out, r.list...)
 	return out
 }
 
 // selectExporter returns the first exporter that Accepts the MIME type.
-func (r *exporterRegistry) selectExporter(ctx context.Context, mimeType string) (Exporter, error) {
+func (r *exporterRegistry) selectExporter(ctx context.Context, mimeType string) (md.Exporter, error) {
 	for _, exp := range r.list {
 		if exp == nil {
 			continue
@@ -467,7 +489,7 @@ func readAllFS(ctx context.Context, rfs fs.FS, name string) ([]byte, error) {
 	return io.ReadAll(f)
 }
 
-func writeFile(ctx context.Context, wfs WriterFS, name string, perm fs.FileMode, b []byte) error {
+func writeFile(ctx context.Context, wfs md.WriterFS, name string, perm fs.FileMode, b []byte) error {
 	_ = ctx
 	w, err := wfs.Create(name, perm)
 	if err != nil {

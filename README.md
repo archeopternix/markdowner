@@ -22,9 +22,7 @@ import (
 	"context"
 	"fmt"
 
-	. "github.com/archeopternix/markdowner"
-	"github.com/archeopternix/markdowner/importers/docx"
-	"github.com/archeopternix/markdowner/importers/markdown"
+	"github.com/archeopternix/markdowner/app/bootstrap"
 	"github.com/archeopternix/markdowner/store/localstore"
 )
 
@@ -32,10 +30,7 @@ func main() {
 	ctx := context.Background()
 
 	rwfs := localstore.NewLocalStoreFS("./.store")
-	store := NewDocumentStore(rwfs)
-
-	store.Importers().Register(markdown.New())
-	store.Importers().Register(docx.New()) // requires pandoc
+	store := bootstrap.NewDocumentStore(rwfs)
 
 	doc, err := store.ParseFromPath(ctx, "testdata/sample.md")
 	if err != nil {
@@ -69,7 +64,6 @@ func main() {
   - `Importers()`
   - `RegisterUpdateHandler(fn)`
 - `type Importer`, `type ImporterRegistry`
-- `func NewDocumentStore(rwfs ReaderWriterFS) DocumentStore`
 
 ### Package `github.com/archeopternix/markdowner/store/localstore`
 
@@ -84,9 +78,13 @@ func main() {
 
 - `func New() *DOCXImporter`
 
+### Package `github.com/archeopternix/markdowner/app/bootstrap`
+
+- `func NewDocumentStore(rwfs markdowner.ReaderWriterFS) markdowner.DocumentStore`
+
 ## Usage Notes
 
-- Register at least one importer before calling `Parse` or `ParseFromPath`.
+- `bootstrap.NewDocumentStore` registers built-in importers/exporters by default.
 - `Parse` closes `ImportSource.Reader` internally.
 - Document data is stored in this layout under your store root:
   - `<docID>/front.md`

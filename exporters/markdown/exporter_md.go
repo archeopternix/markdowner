@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	. "github.com/archeopternix/markdowner"
+	md "github.com/archeopternix/markdowner"
 )
 
 type MarkdownExporter struct{}
@@ -21,10 +21,10 @@ func (*MarkdownExporter) Accept(ctx context.Context, mimeType string) bool {
 	return mt == "text/markdown" || mt == "text/plain" || mt == "text" || mt == "md" || mt == "markdown"
 }
 
-func (*MarkdownExporter) Export(ctx context.Context, doc *Document, writer io.WriteCloser) error {
+func (*MarkdownExporter) Export(ctx context.Context, doc *md.Document, writer io.WriteCloser) error {
 	_ = ctx
 	if doc.String() == "" {
-		return fmt.Errorf("Document is empty")
+		return fmt.Errorf("md.Document is empty")
 	}
 
 	_, err := writer.Write([]byte(doc.String()))

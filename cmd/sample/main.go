@@ -5,13 +5,7 @@ import (
 	"log/slog"
 	"os"
 
-	. "github.com/archeopternix/markdowner"
-
-	expdocx "github.com/archeopternix/markdowner/exporters/docx"
-	expmd "github.com/archeopternix/markdowner/exporters/markdown"
-	"github.com/archeopternix/markdowner/importers/docx"
-	"github.com/archeopternix/markdowner/importers/markdown"
-	"github.com/archeopternix/markdowner/importers/vtt"
+	"github.com/archeopternix/markdowner/app/bootstrap"
 	"github.com/archeopternix/markdowner/store/localstore"
 )
 
@@ -20,29 +14,25 @@ func main() {
 	storeRoot := "./.sample-store"
 
 	rwfs := localstore.NewLocalStoreFS(storeRoot)
-	store := NewDocumentStore(rwfs)
-	store.Importers().Register(markdown.New())
-	store.Importers().Register(docx.New())
-	store.Importers().Register(vtt.New())
-	store.Exporters().Register(expmd.New())
-	store.Exporters().Register(expdocx.New())
+	store := bootstrap.NewDocumentStore(rwfs)
 
-	samplePath := "testdata/Sales.vtt"
+	samplePath := "testdata/sap.md"
 
 	doc, err := store.ParseFromPath(ctx, samplePath)
 	if err != nil {
-		slog.Error("parse strategy.docx:" + err.Error())
+		slog.Error("Parse", "file", samplePath, "error", err.Error())
 		os.Exit(1)
 	}
 
-	wc, err := os.Create("vtt.md") // io.WriteCloser
+	outfile := "test.md"
+	wc, err := os.Create(outfile) // io.WriteCloser
 	if err != nil {
-		slog.Error("create output.docx:" + err.Error())
+		slog.Error("Output", "file", outfile, "error", err.Error())
 		os.Exit(1)
 	}
 	defer wc.Close()
 
 	store.Export(ctx, doc, wc, "markdown")
-
+	slog.Info("Exported", "file", outfile, "format", "markdown")
 	//store.Delete(ctx, doc.ID)
 }

@@ -10,7 +10,8 @@ import (
 	"strings"
 	"time"
 
-	. "github.com/archeopternix/markdowner"
+	md "github.com/archeopternix/markdowner"
+	"github.com/archeopternix/markdowner/internal/format"
 )
 
 type VTTmporter struct{}
@@ -19,7 +20,7 @@ func New() *VTTmporter { return &VTTmporter{} }
 
 func (*VTTmporter) Name() string { return "vtt" }
 
-func (*VTTmporter) Accept(ctx context.Context, src ImportSource) bool {
+func (*VTTmporter) Accept(ctx context.Context, src md.ImportSource) bool {
 	_ = ctx
 	name := strings.ToLower(src.Name)
 	ext := strings.ToLower(filepath.Ext(name))
@@ -32,8 +33,8 @@ func (*VTTmporter) Accept(ctx context.Context, src ImportSource) bool {
 	}
 }
 
-// Import reads the markdown source, extracts frontmatter if present, and saves a Document to the store.
-func (*VTTmporter) Import(ctx context.Context, store DocumentStore, src ImportSource) (*Document, error) {
+// Import reads the markdown source, extracts frontmatter if present, and saves a md.Document to the store.
+func (*VTTmporter) Import(ctx context.Context, store md.DocumentStore, src md.ImportSource) (*md.Document, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -44,14 +45,19 @@ func (*VTTmporter) Import(ctx context.Context, store DocumentStore, src ImportSo
 		return nil, fmt.Errorf("source reader is nil")
 	}
 
-	b, err := ioReadAllWithContext(ctx, src.Reader)
+	_ = ctx
+	b, err := io.ReadAll(src.Reader)
 	if err != nil {
 		return nil, err
 	}
 
 	bodyText := string(b)
 
-	fm := parseFrontmatterMinimal(bodyText)
+	fmap, err := format.DecodeYAML([]byte(bodyText))
+	if err != nil {
+		return nil, err
+	}
+	fm := md.DecodeFrontmatterFromMap(fmap)
 
 	now := time.Now().UTC()
 	t := src.ModTime
@@ -102,7 +108,7 @@ func (*VTTmporter) Import(ctx context.Context, store DocumentStore, src ImportSo
 		bodyText = b.String()
 	}
 
-	doc := &Document{
+	doc := &md.Document{
 		Frontmatter: fm,
 		Markdown:    bodyText,
 		Media:       nil,
@@ -112,11 +118,6 @@ func (*VTTmporter) Import(ctx context.Context, store DocumentStore, src ImportSo
 		return nil, err
 	}
 	return doc, nil
-}
-
-func ioReadAllWithContext(ctx context.Context, r io.Reader) ([]byte, error) {
-	_ = ctx
-	return io.ReadAll(r)
 }
 
 func extractVTTBodyText(bodyText string) (string, []string) {
@@ -301,87 +302,4 @@ func isBlankLine(s string) bool {
 		}
 	}
 	return true
-}
-
-// parseFrontmatterMinimal parses a minimal YAML subset:
-// - key: value pairs
-// - keywords:\n  - item\n  - item
-//
-// Unknown keys are ignored.
-func parseFrontmatterMinimal(yaml string) Frontmatter {
-	lines := strings.Split(yaml, "\n")
-	var fm Frontmatter
-	inKeywords := false
-	for _, ln := range lines {
-		ln = strings.TrimRight(ln, "\r\t ")
-		if strings.TrimSpace(ln) == "" {
-			continue
-		}
-		if strings.HasPrefix(strings.TrimSpace(ln), "keywords:") {
-			inKeywords = true
-			continue
-		}
-		if inKeywords {
-			trim := strings.TrimSpace(ln)
-			if strings.HasPrefix(trim, "-") {
-				kw := strings.TrimSpace(strings.TrimPrefix(trim, "-"))
-				fm.Keywords = append(fm.Keywords, unquoteYAML(kw))
-				continue
-			}
-			inKeywords = false
-		}
-
-		k, v, ok := cutKeyValue(ln)
-		if !ok {
-			continue
-		}
-		k = strings.ToLower(k)
-		v = unquoteYAML(strings.TrimSpace(v))
-		switch k {
-		case "author":
-			fm.Author = v
-		case "title":
-			fm.Title = v
-		case "subtitle":
-			fm.Subtitle = v
-		case "date":
-			fm.Date = v
-		case "changeddate", "changed_date", "changed-date":
-			fm.ChangedDate = v
-		case "originaldocument", "original_document", "original-document":
-			fm.OriginalDocument = v
-		case "originalformat", "original_format", "original-format":
-			fm.OriginalFormat = v
-		case "version":
-			fm.Version = v
-		case "language":
-			fm.Language = v
-		case "abstract":
-			fm.Abstract = v
-		}
-	}
-	return fm
-}
-
-func cutKeyValue(ln string) (key, val string, ok bool) {
-	idx := strings.Index(ln, ":")
-	if idx <= 0 {
-		return "", "", false
-	}
-	key = strings.TrimSpace(ln[:idx])
-	val = strings.TrimSpace(ln[idx+1:])
-	if key == "" {
-		return "", "", false
-	}
-	return key, val, true
-}
-
-func unquoteYAML(s string) string {
-	s = strings.TrimSpace(s)
-	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
-		s = s[1 : len(s)-1]
-		s = strings.ReplaceAll(s, "\\\"", "\"")
-		s = strings.ReplaceAll(s, "\\\\", "\\")
-	}
-	return s
 }
