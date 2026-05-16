@@ -9,8 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/archeopternix/markdowner/app/bootstrap"
-	"github.com/archeopternix/markdowner/app/localstore"
+	"github.com/archeopternix/markdowner/store"
 )
 
 func TestPublicTextImportStability(t *testing.T) {
@@ -18,7 +17,7 @@ func TestPublicTextImportStability(t *testing.T) {
 
 	ctx := context.Background()
 	storeRoot := t.TempDir()
-	store := bootstrap.NewDocumentStore(localstore.NewLocalStoreFS(storeRoot))
+	store := store.NewDocumentStore(store.NewLocalStoreFS(storeRoot))
 
 	doc, err := store.ParseFromPath(ctx, fixturePath(t, "playbook.txt"))
 	if err != nil {
@@ -52,7 +51,7 @@ func TestPublicVTTConferenceImportStability(t *testing.T) {
 	t.Log("Purpose: ensure VTT conference recordings are transformed into structured markdown with speaker and conversation sections.")
 
 	ctx := context.Background()
-	store := bootstrap.NewDocumentStore(localstore.NewLocalStoreFS(t.TempDir()))
+	store := store.NewDocumentStore(store.NewLocalStoreFS(t.TempDir()))
 
 	doc, err := store.ParseFromPath(ctx, fixturePath(t, "sales.vtt"))
 	if err != nil {
@@ -83,7 +82,7 @@ func TestPublicMarkdownImporterStability(t *testing.T) {
 	t.Log("Purpose: ensure markdown importer keeps frontmatter values and strips frontmatter from the resulting markdown body.")
 
 	ctx := context.Background()
-	store := bootstrap.NewDocumentStore(localstore.NewLocalStoreFS(t.TempDir()))
+	store := store.NewDocumentStore(store.NewLocalStoreFS(t.TempDir()))
 
 	doc, err := store.ParseFromPath(ctx, fixturePath(t, "sample.md"))
 	if err != nil {
@@ -119,7 +118,7 @@ func TestPublicDOCXImporterStability(t *testing.T) {
 
 	ctx := context.Background()
 	storeRoot := t.TempDir()
-	store := bootstrap.NewDocumentStore(localstore.NewLocalStoreFS(storeRoot))
+	store := store.NewDocumentStore(store.NewLocalStoreFS(storeRoot))
 
 	doc, err := store.ParseFromPath(ctx, fixturePath(t, "shop.docx"))
 	if err != nil {

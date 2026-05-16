@@ -1,4 +1,4 @@
-package docstore
+package store
 
 import (
 	"bufio"

@@ -5,16 +5,15 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/archeopternix/markdowner/app/bootstrap"
-	"github.com/archeopternix/markdowner/app/localstore"
+	"github.com/archeopternix/markdowner/store"
 )
 
 func main() {
 	ctx := context.Background()
 	storeRoot := "./.sample-store"
 
-	rwfs := localstore.NewLocalStoreFS(storeRoot)
-	store := bootstrap.NewDocumentStore(rwfs)
+	rwfs := store.NewLocalStoreFS(storeRoot)
+	store := store.NewDocumentStore(rwfs)
 
 	samplePath := "testdata/sap.md"
 

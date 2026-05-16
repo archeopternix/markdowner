@@ -1,10 +1,10 @@
-package bootstrap
+package store
 
 import (
 	"io"
 
 	"github.com/archeopternix/markdowner"
-	appdocstore "github.com/archeopternix/markdowner/app/docstore"
+
 	expdocx "github.com/archeopternix/markdowner/exporters/docx"
 	expmd "github.com/archeopternix/markdowner/exporters/markdown"
 	impdocx "github.com/archeopternix/markdowner/importers/docx"
@@ -16,7 +16,7 @@ import (
 // NewDocumentStore constructs a store backed by the provided ReaderWriterFS
 // and wires built-in importers/exporters for out-of-the-box usage.
 func NewDocumentStore(rwfs markdowner.ReaderWriterFS) markdowner.DocumentStore {
-	ds := appdocstore.New(rwfs, storeMimeDetector{})
+	ds := New(rwfs, storeMimeDetector{})
 	registerBuiltins(ds)
 	return ds
 }
