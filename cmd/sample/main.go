@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/archeopternix/markdowner/app/bootstrap"
-	"github.com/archeopternix/markdowner/store/localstore"
+	"github.com/archeopternix/markdowner/app/localstore"
 )
 
 func main() {

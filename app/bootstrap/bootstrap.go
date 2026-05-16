@@ -10,7 +10,7 @@ import (
 	impdocx "github.com/archeopternix/markdowner/importers/docx"
 	impmd "github.com/archeopternix/markdowner/importers/markdown"
 	impvtt "github.com/archeopternix/markdowner/importers/vtt"
-	"github.com/archeopternix/markdowner/store"
+	"github.com/archeopternix/markdowner/internal/format"
 )
 
 // NewDocumentStore constructs a store backed by the provided ReaderWriterFS
@@ -24,7 +24,7 @@ func NewDocumentStore(rwfs markdowner.ReaderWriterFS) markdowner.DocumentStore {
 type storeMimeDetector struct{}
 
 func (storeMimeDetector) Detect(path string, r io.Reader) (string, error) {
-	m, err := store.DetectMime(path, r)
+	m, err := format.DetectMime(path, r)
 	if err != nil {
 		return "", err
 	}

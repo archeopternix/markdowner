@@ -1,4 +1,4 @@
-package store
+package format
 
 import (
 	"archive/zip"
