@@ -15,59 +15,19 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	md "github.com/archeopternix/markdowner"
 	"github.com/archeopternix/markdowner/internal/format"
+	fsutils "github.com/archeopternix/markdowner/internal/fsutils"
 )
-
-// MimeDetector abstracts MIME detection for ParseFromPath.
-// The concrete adapter is injected at composition time.
-type MimeDetector interface {
-	Detect(path string, r io.Reader) (string, error)
-}
-
-// docstore.go is a single-file reference implementation that groups the following topics:
-// - concrete md.DocumentStore implementation
-// - List() using rwfs.ListAll
-// - GetByID() reading front.md/root.md + rwfs.ListMedia
-// - SaveOrUpdate() incl. allocate ID if empty; mandatory file enforcement
-// - Parse() selecting importer, importing, persisting, calling update handlers
-// - RegisterUpdateHandler() + invocation ordering/error handling
-// - importer registry implementation returned by Importers()
-// - canonical paths: <id>/front.md, <id>/root.md, <id>/media/<name>
-
-// New constructs a concrete md.DocumentStore backed by the provided ReaderWriterFS.
-//
-// This implementation expects:
-// - rwfs.ListAll(".") (or "/") to return document IDs only
-// - rwfs.ListMedia(docID) to return base filenames only
-// - rwfs.Create(name, perm) to create/overwrite files
-func New(rwfs md.ReaderWriterFS, mimeDetector MimeDetector) md.DocumentStore {
-	if mimeDetector == nil {
-		mimeDetector = noopMimeDetector{}
-	}
-	return &documentStore{
-		rwfs:         rwfs,
-		mimeDetector: mimeDetector,
-		imps:         &importerRegistry{},
-		exps:         &exporterRegistry{},
-		handlers:     nil,
-		listPath:     ".",
-		indexPath:    ".", // unused here; reserved for callers
-	}
-}
-
-type noopMimeDetector struct{}
-
-func (noopMimeDetector) Detect(path string, r io.Reader) (string, error) {
-	_ = path
-	_ = r
-	return "", nil
-}
 
 type documentStore struct {
 	rwfs         md.ReaderWriterFS
 	mimeDetector MimeDetector
+
+	// Mutex to prevent parallel calls to the same func
+	opLocks keyMutex
 
 	imps     *importerRegistry
 	exps     *exporterRegistry
@@ -78,6 +38,28 @@ type documentStore struct {
 
 	// indexPath reserved.
 	indexPath string
+}
+
+// lock to prevent the same func is called twice in parallel
+type keyMutex struct {
+	mu sync.Mutex
+	m  map[string]*sync.Mutex
+}
+
+func (k *keyMutex) Lock(key string) func() {
+	k.mu.Lock()
+	if k.m == nil {
+		k.m = make(map[string]*sync.Mutex)
+	}
+	mu, ok := k.m[key]
+	if !ok {
+		mu = &sync.Mutex{}
+		k.m[key] = mu
+	}
+	k.mu.Unlock()
+
+	mu.Lock()
+	return func() { mu.Unlock() }
 }
 
 // -----------------------------
@@ -144,6 +126,13 @@ func (s *documentStore) SaveOrUpdate(ctx context.Context, doc *md.Document) erro
 		return errors.New("nil document")
 	}
 
+	unlock := s.opLocks.Lock("SaveOrUpdate:" + doc.ID)
+	defer unlock()
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	if strings.TrimSpace(doc.ID) == "" {
 		doc.ID = newUUIDLike()
 	}
@@ -157,7 +146,14 @@ func (s *documentStore) SaveOrUpdate(ctx context.Context, doc *md.Document) erro
 	if err := s.rwfs.MkdirAll(docDir(doc.ID), 0o755); err != nil {
 		return err
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	if err := s.rwfs.MkdirAll(mediaDir(doc.ID), 0o755); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 
@@ -174,8 +170,15 @@ func (s *documentStore) SaveOrUpdate(ctx context.Context, doc *md.Document) erro
 	if err := writeFile(ctx, s.rwfs, frontPath(doc.ID), 0o644, front); err != nil {
 		return fmt.Errorf("write front.md: %w", err)
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	if err := writeFile(ctx, s.rwfs, rootPath(doc.ID), 0o644, root); err != nil {
 		return fmt.Errorf("write root.md: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	// Invoke update handlers
@@ -283,6 +286,9 @@ func (s *documentStore) Parse(ctx context.Context, src md.ImportSource) (*md.Doc
 		return nil, errors.New("importer returned empty document ID")
 	}
 
+	unlock := s.opLocks.Lock("Parse:" + doc.ID)
+	defer unlock()
+
 	// Ensure mandatory files exist by performing a GetByID read.
 	// This also normalizes Media listing.
 	stored, err := s.GetByID(ctx, doc.ID)
@@ -303,7 +309,10 @@ func (s *documentStore) Parse(ctx context.Context, src md.ImportSource) (*md.Doc
 }
 
 // SaveMedia saves media content for a document. It creates or overwrites the media file under <docID>/media/<mediaName>.
-func (d documentStore) SaveMedia(ctx context.Context, docID string, mediaName string, content io.Reader) error {
+func (s *documentStore) SaveMedia(ctx context.Context, docID string, mediaName string, content io.Reader) error {
+	unlock := s.opLocks.Lock("SaveMedia:" + docID)
+	defer unlock()
+
 	_ = ctx
 	if err := validateDocID(docID); err != nil {
 		return err
@@ -314,15 +323,24 @@ func (d documentStore) SaveMedia(ctx context.Context, docID string, mediaName st
 
 	// slog.Debug("SaveMedia", "id", docID, "media", mediaName)
 
-	wc, err := d.rwfs.Create(mediaPath(docID, mediaName), 0o644)
+	wc, err := s.rwfs.Create(mediaPath(docID, mediaName), 0o644)
 	if err != nil {
 		return err
 	}
 	defer wc.Close()
-	_, err = io.Copy(wc, content)
-	if err != nil {
-		return err
-	}
+
+	// also close wc on ctx cancel to unblock writes
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = wc.Close()
+		case <-done:
+		}
+	}()
+	defer close(done)
+
+	_, err = fsutils.CopyWithContext(ctx, wc, content)
 	return err
 }
 
@@ -490,22 +508,42 @@ func readAllFS(ctx context.Context, rfs fs.FS, name string) ([]byte, error) {
 }
 
 func writeFile(ctx context.Context, wfs md.WriterFS, name string, perm fs.FileMode, b []byte) error {
-	_ = ctx
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	w, err := wfs.Create(name, perm)
 	if err != nil {
 		return err
 	}
+
+	// If ctx cancels, close the writer to unblock IO where possible.
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = w.Close()
+		case <-done:
+		}
+	}()
+	defer close(done)
+
 	bw := bufio.NewWriter(w)
-	_, werr := bw.Write(b)
-	errFlush := bw.Flush()
-	errClose := w.Close()
-	if werr != nil {
-		return werr
+
+	if _, err := bw.Write(b); err != nil {
+		_ = w.Close()
+		return err
 	}
-	if errFlush != nil {
-		return errFlush
+
+	if err := bw.Flush(); err != nil {
+		_ = w.Close()
+		return err
 	}
-	return errClose
+	if err := ctx.Err(); err != nil {
+		_ = w.Close()
+		return err
+	}
+	return w.Close()
 }
 
 // newUUIDLike generates a random 16-byte hex string.

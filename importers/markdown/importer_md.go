@@ -2,11 +2,13 @@ package markdown
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"path/filepath"
 	"strings"
+
 	"time"
 
 	md "github.com/archeopternix/markdowner"
@@ -80,9 +82,10 @@ func (*MarkdownImporter) Import(ctx context.Context, store md.DocumentStore, src
 	stamp := t.Format("02.01.2006 15:04")
 
 	// Defaults if missing or no frontmatter.
-	titleDefault := fsutils.FileBaseNameNoExt(src.Name)
 	if strings.TrimSpace(fm.Title) == "" {
-		fm.Title = titleDefault
+		fm.Title = fsutils.FileBaseNameNoExt(src.Name)
+	} else {
+		fm.Subtitle = fsutils.FileBaseNameNoExt(src.Name)
 	}
 	if strings.TrimSpace(fm.Date) == "" {
 		fm.Date = stamp
@@ -102,12 +105,7 @@ func (*MarkdownImporter) Import(ctx context.Context, store md.DocumentStore, src
 
 	slog.Debug("Parsed markdown", "title", fm.Title, "date", fm.Date)
 
-	bodyText = strings.TrimRight(bodyText, "\r\n")
-	if strings.TrimSpace(bodyText) == "" {
-		// Create a minimal markdown document if none is present.
-		// Keep it simple and deterministic.
-		bodyText = "# " + fm.Title + "\n"
-	}
+	bodyText = "# " + fm.Title + "\n" + strings.TrimRight(bodyText, "\r\n")
 
 	doc := &md.Document{
 		Frontmatter: fm,
@@ -122,6 +120,23 @@ func (*MarkdownImporter) Import(ctx context.Context, store md.DocumentStore, src
 }
 
 func ioReadAllWithContext(ctx context.Context, r io.Reader) ([]byte, error) {
-	_ = ctx
-	return io.ReadAll(r)
+	var b []byte
+	buf := make([]byte, 32*1024)
+
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
+		n, err := r.Read(buf)
+		if n > 0 {
+			b = append(b, buf[:n]...)
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return b, nil
+			}
+			return nil, err
+		}
+	}
 }

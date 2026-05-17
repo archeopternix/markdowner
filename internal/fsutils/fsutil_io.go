@@ -3,6 +3,8 @@ package fsutil
 import (
 	"archive/zip"
 	"bufio"
+	"context"
+	"errors"
 	"io"
 	"io/fs"
 	"os"
@@ -123,6 +125,35 @@ func CopyDir(srcDir, dstDir string) error {
 		}
 		return CopyFile(path, dstPath, info.Mode())
 	})
+}
+
+// CopyWithContext copies from src -> dst and aborts when ctx get stop signal
+func CopyWithContext(ctx context.Context, dst io.Writer, src io.Reader) (int64, error) {
+	buf := make([]byte, 32*1024)
+	var written int64
+
+	for {
+		if err := ctx.Err(); err != nil {
+			return written, err
+		}
+		nr, rerr := src.Read(buf)
+		if nr > 0 {
+			nw, werr := dst.Write(buf[:nr])
+			written += int64(nw)
+			if werr != nil {
+				return written, werr
+			}
+			if nw != nr {
+				return written, io.ErrShortWrite
+			}
+		}
+		if rerr != nil {
+			if errors.Is(rerr, io.EOF) {
+				return written, nil
+			}
+			return written, rerr
+		}
+	}
 }
 
 // FileBaseNameNoExt just returns the name of the file without extension or path
