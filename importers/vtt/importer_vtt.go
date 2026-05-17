@@ -12,6 +12,7 @@ import (
 
 	md "github.com/archeopternix/markdowner"
 	"github.com/archeopternix/markdowner/internal/format"
+	fsutils "github.com/archeopternix/markdowner/internal/fsutils"
 )
 
 type VTTmporter struct{}
@@ -67,9 +68,8 @@ func (*VTTmporter) Import(ctx context.Context, store md.DocumentStore, src md.Im
 	stamp := t.Format("02.01.2006 15:04")
 
 	// Defaults if missing or no frontmatter.
-	titleDefault := strings.TrimSuffix(filepath.Base(src.Name), filepath.Ext(src.Name))
 	if strings.TrimSpace(fm.Title) == "" {
-		fm.Title = titleDefault
+		fm.Title = "Meeting minutes: " + fsutils.FileBaseNameNoExt(src.Name)
 	}
 	if strings.TrimSpace(fm.Date) == "" {
 		fm.Date = stamp
@@ -97,7 +97,8 @@ func (*VTTmporter) Import(ctx context.Context, store md.DocumentStore, src md.Im
 	}
 	if len(speakers) > 0 {
 		var b strings.Builder
-		b.WriteString("## Speakers:\n")
+		b.WriteString("# " + fm.Title + "\n")
+		b.WriteString("## Participants:\n")
 		for _, speaker := range speakers {
 			b.WriteString("* " + html.UnescapeString(speaker))
 			b.WriteString("\n")

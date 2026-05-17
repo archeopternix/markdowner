@@ -11,6 +11,7 @@ import (
 
 	md "github.com/archeopternix/markdowner"
 	"github.com/archeopternix/markdowner/internal/format"
+	fsutils "github.com/archeopternix/markdowner/internal/fsutils"
 )
 
 // Importer imports markdown-like sources into the docpipe store.
@@ -79,7 +80,7 @@ func (*MarkdownImporter) Import(ctx context.Context, store md.DocumentStore, src
 	stamp := t.Format("02.01.2006 15:04")
 
 	// Defaults if missing or no frontmatter.
-	titleDefault := strings.TrimSuffix(filepath.Base(src.Name), filepath.Ext(src.Name))
+	titleDefault := fsutils.FileBaseNameNoExt(src.Name)
 	if strings.TrimSpace(fm.Title) == "" {
 		fm.Title = titleDefault
 	}

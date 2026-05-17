@@ -132,32 +132,24 @@ func (i DOCXImporter) Import(ctx context.Context, store md.DocumentStore, src md
 		Frontmatter: md.Frontmatter{
 			OriginalDocument: src.Name,
 			OriginalFormat:   "docx",
-			Author:           "",                                        // pandoc doesn't reliably extract author metadata from docx, so we leave it empty.
-			Title:            "",                                        // pandoc doesn't reliably extract title metadata from docx, so we leave it empty.
-			Subtitle:         "",                                        // pandoc doesn't reliably extract subtitle metadata from docx, so we leave it empty.
+			Author:           meta.Author,                               // pandoc doesn't reliably extract author metadata from docx
+			Title:            meta.Title,                                // pandoc doesn't reliably extract title metadata from docx
+			Subtitle:         "",                                        // pandoc doesn't reliably extract subtitle metadata from docx
 			Date:             src.ModTime.Format("2006-01-02 15:04:05"), // fallback to file mod time if docx metadata is missing
 			ChangedDate:      src.ModTime.Format("2006-01-02 15:04:05"), // fallback to file mod time if docx metadata is missing
 			Version:          "1.0",
-			Language:         "", // pandoc doesn't reliably extract language metadata from docx, so we leave it empty.
-			Abstract:         "", // pandoc doesn't reliably extract abstract metadata from docx, so we leave it empty.
+			Language:         meta.Language, // pandoc doesn't reliably extract language metadata from docx
+			Abstract:         meta.Abstract, // pandoc doesn't reliably extract abstract metadata from docx
 		},
 		Markdown: out.String(),
 	}
 
-	// Write metadata to frontmatter *when available* (don’t stomp defaults/empties).
-	if meta.Title != "" && doc.Frontmatter.Title == "" {
-		doc.Frontmatter.Title = meta.Title
+	// set file name as title or subtitle when empty
+	if doc.Frontmatter.Title == "" {
+		doc.Frontmatter.Title = fsutils.FileBaseNameNoExt(src.Name)
+	} else {
+		doc.Frontmatter.Subtitle = fsutils.FileBaseNameNoExt(src.Name)
 	}
-	if meta.Author != "" && doc.Frontmatter.Author == "" {
-		doc.Frontmatter.Author = meta.Author
-	}
-	if meta.Language != "" && doc.Frontmatter.Language == "" {
-		doc.Frontmatter.Language = meta.Language
-	}
-	if meta.Abstract != "" && doc.Frontmatter.Abstract == "" {
-		doc.Frontmatter.Abstract = meta.Abstract
-	}
-
 	// Prefer real created/modified times if present in the docx.
 	if meta.CreatedAt != nil {
 		doc.Frontmatter.Date = meta.CreatedAt.Format("2006-01-02 15:04:05")
@@ -208,8 +200,7 @@ func (i DOCXImporter) Import(ctx context.Context, store md.DocumentStore, src md
 
 		}
 		// rewrite markdown accordingly:
-		doc.Markdown = rewritePandocFigureImageHTML(doc.Markdown, "media/")
-		doc.Markdown = rewritePandocMediaLinks(doc.Markdown, "media/")
+		doc.Markdown = rewriteMarkdownMediaLinks(doc.Markdown, "media/")
 	}
 	store.SaveOrUpdate(ctx, doc)
 	return doc, nil

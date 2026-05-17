@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ReadAll opens name from rfs and reads it fully.
@@ -122,4 +123,16 @@ func CopyDir(srcDir, dstDir string) error {
 		}
 		return CopyFile(path, dstPath, info.Mode())
 	})
+}
+
+// FileBaseNameNoExt just returns the name of the file without extension or path
+func FileBaseNameNoExt(path string) string {
+	// 1) drop directories
+	name := filepath.Base(path)
+
+	// 2) drop extension (only the last one, like ".tar.gz" -> ".tar")
+	ext := filepath.Ext(name)
+	name = strings.TrimSuffix(name, ext)
+
+	return name
 }

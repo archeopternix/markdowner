@@ -1,8 +1,11 @@
 package docx
 
 import (
+	filepaths "path/filepath"
 	"regexp"
 	"strings"
+
+	fsutils "github.com/archeopternix/markdowner/internal/fsutils"
 )
 
 // rewritePandocMediaLinks Rewrite only image links where the *last directory* before the filename is "media".
@@ -113,4 +116,98 @@ func normalizePandocMediaTarget(rawTarget string, newPrefix string) (string, boo
 		return prefix + filename, true
 	}
 	return "", false
+}
+
+// rewriteMarkdownMediaLinks rewrites local HTML image tags (<figure> and <img>) to markdown image links.
+// It keeps web links unchanged and rewrites only recognized image file targets.
+func rewriteMarkdownMediaLinks(md string, newPrefix string) string {
+	figureRe := regexp.MustCompile(`(?is)<figure\b[^>]*>.*?</figure>`)
+	imgRe := regexp.MustCompile(`(?is)<img\b[^>]*>`)
+	srcRe := regexp.MustCompile(`(?is)\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)')`)
+	altRe := regexp.MustCompile(`(?is)\balt\s*=\s*(?:"([^"]*)"|'([^']*)')`)
+
+	isWebLink := func(s string) bool {
+		v := strings.ToLower(strings.TrimSpace(s))
+		return strings.HasPrefix(v, "http://") ||
+			strings.HasPrefix(v, "https://") ||
+			strings.HasPrefix(v, "//")
+	}
+
+	isImageFilename := func(name string) bool {
+		switch strings.ToLower(filepaths.Ext(name)) {
+		case ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg", ".tif", ".tiff", ".ico", ".avif", ".heic", ".heif":
+			return true
+		default:
+			return false
+		}
+	}
+
+	buildMarkdownLink := func(imgTag string) (string, bool) {
+		srcMatch := srcRe.FindStringSubmatch(imgTag)
+		if len(srcMatch) < 3 {
+			return "", false
+		}
+		src := srcMatch[1]
+		if src == "" {
+			src = srcMatch[2]
+		}
+		src = strings.TrimSpace(src)
+		if src == "" || isWebLink(src) {
+			return "", false
+		}
+
+		cleanSrc := strings.Trim(src, "<>")
+		if i := strings.IndexAny(cleanSrc, "?#"); i >= 0 {
+			cleanSrc = cleanSrc[:i]
+		}
+		cleanSrc = strings.ReplaceAll(cleanSrc, `\`, `/`)
+		cleanSrc = strings.TrimSpace(cleanSrc)
+		if cleanSrc == "" {
+			return "", false
+		}
+
+		filename := cleanSrc
+		if i := strings.LastIndex(cleanSrc, "/"); i >= 0 {
+			filename = cleanSrc[i+1:]
+		}
+		if filename == "" || !isImageFilename(filename) {
+			return "", false
+		}
+
+		alt := ""
+		altMatch := altRe.FindStringSubmatch(imgTag)
+		if len(altMatch) >= 3 {
+			alt = altMatch[1]
+			if alt == "" {
+				alt = altMatch[2]
+			}
+		}
+		alt = strings.TrimSpace(alt)
+		if alt == "" {
+			alt = fsutils.FileBaseNameNoExt(filename)
+		}
+
+		target := filepaths.Join(newPrefix, filename)
+		return "![" + alt + "](" + target + ")", true
+	}
+
+	rewritten := figureRe.ReplaceAllStringFunc(md, func(fig string) string {
+		img := imgRe.FindString(fig)
+		if img == "" {
+			return fig
+		}
+		link, ok := buildMarkdownLink(img)
+		if !ok {
+			return fig
+		}
+		return link
+	})
+
+	return imgRe.ReplaceAllStringFunc(rewritten, func(img string) string {
+		link, ok := buildMarkdownLink(img)
+		if !ok {
+			return img
+		}
+		return link
+	})
 }
